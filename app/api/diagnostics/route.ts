@@ -15,6 +15,12 @@ export async function GET() {
   const serviceRoleKeyConfigured = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   report.supabase = {
+    // NEXT_PUBLIC_* is inlined into the client bundle at build time and is
+    // never secret (it's already visible in browser DevTools in production),
+    // so echoing the resolved value back here is safe and — unlike a boolean
+    // — actually tells you whether the build baked in a placeholder or the
+    // real value, which a "configured: true/false" check cannot distinguish.
+    resolvedUrl: supabaseUrl ?? null,
     urlConfigured: Boolean(supabaseUrl),
     anonKeyConfigured,
     serviceRoleKeyConfigured,
