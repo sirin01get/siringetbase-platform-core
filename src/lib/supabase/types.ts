@@ -170,9 +170,11 @@ export interface Database {
         // attempts/next_attempt_at and the 'dead_letter' status come from
         // supabase/migrations/0002_sync_retry_hardening.sql — see
         // ../entity-graph/data-sync-architecture.md §4 and src/lib/entity-graph/sync.ts.
+        // 'engagement' comes from 0003_document_intelligence_skeleton.sql —
+        // CA Focus Phase 1's (:Person)-[:ENGAGED]->(:ServiceProvider) sync.
         Row: {
           id: string;
-          entity_type: "person" | "business" | "service_provider";
+          entity_type: "person" | "business" | "service_provider" | "engagement";
           entity_id: string;
           vertical: string;
           operation: "upsert" | "delete";
@@ -186,7 +188,7 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          entity_type: "person" | "business" | "service_provider";
+          entity_type: "person" | "business" | "service_provider" | "engagement";
           entity_id: string;
           vertical: string;
           operation: "upsert" | "delete";
@@ -218,6 +220,86 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["invoices"]["Insert"]>;
+      };
+      // Document Intelligence skeleton — 0003_document_intelligence_skeleton.sql.
+      // See ../../document-intelligence/README.md for the full pipeline this
+      // is a skeleton of; only the tables exist so far, not the mechanics.
+      extraction_templates: {
+        Row: {
+          id: string;
+          document_type: string;
+          vertical: string;
+          owning_module: string;
+          prompt: string;
+          output_schema: Record<string, unknown>;
+          confidence_threshold: number;
+          requires_human_review: boolean;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          document_type: string;
+          vertical: string;
+          owning_module: string;
+          prompt: string;
+          output_schema: Record<string, unknown>;
+          confidence_threshold?: number;
+          requires_human_review?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["extraction_templates"]["Insert"]>;
+      };
+      documents: {
+        Row: {
+          id: string;
+          owner_role_profile_id: string;
+          vertical: string;
+          document_type: string;
+          storage_pointer: string;
+          original_filename: string | null;
+          status: "uploaded" | "extraction_queued" | "extraction_completed" | "extraction_failed";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_role_profile_id: string;
+          vertical: string;
+          document_type: string;
+          storage_pointer: string;
+          original_filename?: string | null;
+          status?: "uploaded" | "extraction_queued" | "extraction_completed" | "extraction_failed";
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["documents"]["Insert"]>;
+      };
+      extraction_jobs: {
+        Row: {
+          id: string;
+          document_id: string;
+          template_id: string;
+          status: "queued" | "processing" | "completed" | "failed";
+          raw_output: Record<string, unknown> | null;
+          interpretation: Record<string, unknown> | null;
+          confidence: number | null;
+          reviewed_by: string | null;
+          reviewed_at: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          document_id: string;
+          template_id: string;
+          status?: "queued" | "processing" | "completed" | "failed";
+          raw_output?: Record<string, unknown> | null;
+          interpretation?: Record<string, unknown> | null;
+          confidence?: number | null;
+          reviewed_by?: string | null;
+          reviewed_at?: string | null;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["extraction_jobs"]["Insert"]>;
       };
     };
   };

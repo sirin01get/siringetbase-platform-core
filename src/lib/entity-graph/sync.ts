@@ -19,8 +19,19 @@ const MAX_BACKOFF_MINUTES = 30;
 
 type LabelGroup = "Person" | "Person:ServiceProvider" | "Business" | "Business:ServiceProvider";
 
-interface SyncQueueItem {
+// Two different sync shapes share this one outbox table:
+// - role_profiles rows (entity_type person/business/service_provider) — a
+//   single node upsert, keyed on role_profile_id, unchanged since Phase 0.
+// - engagements rows (entity_type 'engagement', added by CA Focus Phase 1 —
+//   see 0003_document_intelligence_skeleton.sql) — creates/updates an
+//   :Engagement node AND the (:Person)-[:ENGAGED]->(:ServiceProvider) and
+//   (:ServiceProvider)-[:SPECIALIZES_IN]->(:ServiceType) relationships
+//   around it. A relationship, not a single node, so it needs its own
+//   payload shape and its own Cypher — see
+//   ../../../cafocus/phases/phase-1-core-data-graph-model/sync-contract.md.
+interface RoleProfileSyncItem {
   id: string;
+  entity_type: "person" | "business" | "service_provider";
   operation: "upsert" | "delete";
   attempts: number;
   payload: {
@@ -33,6 +44,23 @@ interface SyncQueueItem {
   };
 }
 
+interface EngagementSyncItem {
+  id: string;
+  entity_type: "engagement";
+  operation: "upsert" | "delete";
+  attempts: number;
+  payload: {
+    engagement_id: string;
+    client_role_profile_id: string;
+    ca_role_profile_id: string;
+    vertical: string;
+    service_type_slug: string;
+    status: string;
+  };
+}
+
+type SyncQueueItem = RoleProfileSyncItem | EngagementSyncItem;
+
 interface DrainResult {
   processed: number;
   retryScheduled: number;
@@ -42,9 +70,9 @@ interface DrainResult {
 // Drains up to `batchSize` actionable entity_sync_queue rows (status =
 // 'pending' AND next_attempt_at has elapsed — see 0001_init.sql's
 // enqueue_entity_sync trigger and 0002_sync_retry_hardening.sql's retry
-// columns), upserting the corresponding node in Neo4j for each. Postgres
-// stays the source of truth throughout — this function only ever reads from
-// Postgres and writes to Neo4j, never the reverse
+// columns), upserting the corresponding node(s)/relationship(s) in Neo4j for
+// each. Postgres stays the source of truth throughout — this function only
+// ever reads from Postgres and writes to Neo4j, never the reverse
 // (../../entity-graph/README.md's sync contract).
 //
 // Runs on a Cloudflare Cron Trigger (see ../../worker.ts, wrangler.jsonc's
@@ -55,7 +83,7 @@ export async function drainEntitySyncQueue(batchSize = 50): Promise<DrainResult>
 
   const { data: items, error } = await supabase
     .from("entity_sync_queue")
-    .select("id, operation, attempts, payload")
+    .select("id, entity_type, operation, attempts, payload")
     .eq("status", "pending")
     .lte("next_attempt_at", new Date().toISOString())
     .order("created_at", { ascending: true })
@@ -71,13 +99,22 @@ export async function drainEntitySyncQueue(batchSize = 50): Promise<DrainResult>
   // silently succeeding a no-op) so they're visible in diagnostics if one
   // ever does show up unexpectedly, instead of quietly marked "processed".
   const upserts = queueItems.filter((item) => item.operation === "upsert");
+  const roleProfileUpserts = upserts.filter(
+    (item): item is RoleProfileSyncItem => item.entity_type !== "engagement"
+  );
+  const engagementUpserts = upserts.filter(
+    (item): item is EngagementSyncItem => item.entity_type === "engagement"
+  );
 
-  // Batch by label combination (MVP item #3) — only four possible groups —
-  // and send one UNWIND MERGE per group instead of one HTTP request per
-  // row. Cuts up to `batchSize` round-trips to the Neo4j Query API down to
-  // at most 4 in the common (no-error) case.
-  const groups = new Map<LabelGroup, SyncQueueItem[]>();
-  for (const item of upserts) {
+  let processed = 0;
+  let retryScheduled = 0;
+  let deadLettered = 0;
+
+  // --- role_profiles: batch by label combination (MVP item #3) — only
+  // four possible groups — and send one UNWIND MERGE per group instead of
+  // one HTTP request per row. ---
+  const groups = new Map<LabelGroup, RoleProfileSyncItem[]>();
+  for (const item of roleProfileUpserts) {
     const labels = labelGroupFor(item);
     const group = groups.get(labels);
     if (group) {
@@ -86,10 +123,6 @@ export async function drainEntitySyncQueue(batchSize = 50): Promise<DrainResult>
       groups.set(labels, [item]);
     }
   }
-
-  let processed = 0;
-  let retryScheduled = 0;
-  let deadLettered = 0;
 
   for (const [labels, groupItems] of groups) {
     try {
@@ -110,6 +143,31 @@ export async function drainEntitySyncQueue(batchSize = 50): Promise<DrainResult>
       for (const item of groupItems) {
         try {
           await upsertNode(item);
+          await markProcessed(supabase, item.id);
+          processed += 1;
+        } catch (rowErr) {
+          const outcome = await markFailed(supabase, item, rowErr);
+          if (outcome === "dead_letter") deadLettered += 1;
+          else retryScheduled += 1;
+        }
+      }
+    }
+  }
+
+  // --- engagements: one batched statement for the whole set (all rows
+  // share the same Cypher shape, unlike role_profiles' four label
+  // variants), same batch-then-fall-back-to-per-row pattern. ---
+  if (engagementUpserts.length > 0) {
+    try {
+      await upsertEngagementsBatch(engagementUpserts);
+      for (const item of engagementUpserts) {
+        await markProcessed(supabase, item.id);
+        processed += 1;
+      }
+    } catch {
+      for (const item of engagementUpserts) {
+        try {
+          await upsertEngagement(item);
           await markProcessed(supabase, item.id);
           processed += 1;
         } catch (rowErr) {
@@ -160,7 +218,7 @@ export async function getEntitySyncQueueStats(): Promise<QueueStats> {
   };
 }
 
-function labelGroupFor(item: SyncQueueItem): LabelGroup {
+function labelGroupFor(item: RoleProfileSyncItem): LabelGroup {
   const isServiceProvider = SERVICE_PROVIDER_ROLES.has(item.payload.role);
   const base = item.payload.user_id ? "Person" : "Business";
   return (isServiceProvider ? `${base}:ServiceProvider` : base) as LabelGroup;
@@ -170,7 +228,7 @@ function labelGroupFor(item: SyncQueueItem): LabelGroup {
 // label combination. Neo4j labels can't be query parameters — the `labels`
 // interpolation here is safe because it only ever comes from labelGroupFor's
 // fixed, code-controlled set of four strings, never from raw user input.
-async function upsertNodesBatch(labels: LabelGroup, items: SyncQueueItem[]): Promise<void> {
+async function upsertNodesBatch(labels: LabelGroup, items: RoleProfileSyncItem[]): Promise<void> {
   const rows = items.map((item) => ({
     roleProfileId: item.payload.role_profile_id,
     vertical: item.payload.vertical,
@@ -191,7 +249,7 @@ async function upsertNodesBatch(labels: LabelGroup, items: SyncQueueItem[]): Pro
 
 // Single-row fallback — same MERGE as the batched version, used only when a
 // group's batched statement fails, to isolate which specific row(s) are bad.
-async function upsertNode(item: SyncQueueItem): Promise<void> {
+async function upsertNode(item: RoleProfileSyncItem): Promise<void> {
   const { payload } = item;
   const labels = labelGroupFor(item);
 
@@ -205,6 +263,69 @@ async function upsertNode(item: SyncQueueItem): Promise<void> {
       roleProfileId: payload.role_profile_id,
       vertical: payload.vertical,
       role: payload.role,
+      status: payload.status,
+    }
+  );
+}
+
+// CA Focus Phase 1 — creates/updates an :Engagement node and the
+// (:Person)-[:ENGAGED]->(:ServiceProvider) /
+// (:ServiceProvider)-[:SPECIALIZES_IN]->(:ServiceType) relationships around
+// it. MERGE (not MATCH) on the Person/ServiceProvider/ServiceType nodes
+// deliberately — if an engagement's sync row happens to drain before its
+// client/CA's own role_profile sync row (unlikely given drain ordering, but
+// not impossible), this still creates a minimal placeholder node keyed on
+// role_profile_id, which the role_profile sync then enriches with
+// vertical/role/status on its own MERGE ... SET the next time it runs,
+// rather than silently dropping the relationship. See
+// ../../../cafocus/phases/phase-1-core-data-graph-model/sync-contract.md
+// for the full contract this implements.
+async function upsertEngagementsBatch(items: EngagementSyncItem[]): Promise<void> {
+  const rows = items.map((item) => ({
+    engagementId: item.payload.engagement_id,
+    clientRoleProfileId: item.payload.client_role_profile_id,
+    caRoleProfileId: item.payload.ca_role_profile_id,
+    vertical: item.payload.vertical,
+    serviceTypeSlug: item.payload.service_type_slug,
+    status: item.payload.status,
+  }));
+
+  await runCypher(
+    `UNWIND $rows AS row
+     MERGE (client:Person {role_profile_id: row.clientRoleProfileId})
+     MERGE (ca:ServiceProvider {role_profile_id: row.caRoleProfileId})
+     MERGE (e:Engagement {engagement_id: row.engagementId})
+       SET e.vertical = row.vertical,
+           e.service_type_slug = row.serviceTypeSlug,
+           e.status = row.status,
+           e.updated_at = datetime()
+     MERGE (client)-[:ENGAGED]->(ca)
+     MERGE (st:ServiceType {vertical: row.vertical, slug: row.serviceTypeSlug})
+     MERGE (ca)-[:SPECIALIZES_IN]->(st)`,
+    { rows }
+  );
+}
+
+async function upsertEngagement(item: EngagementSyncItem): Promise<void> {
+  const { payload } = item;
+
+  await runCypher(
+    `MERGE (client:Person {role_profile_id: $clientRoleProfileId})
+     MERGE (ca:ServiceProvider {role_profile_id: $caRoleProfileId})
+     MERGE (e:Engagement {engagement_id: $engagementId})
+       SET e.vertical = $vertical,
+           e.service_type_slug = $serviceTypeSlug,
+           e.status = $status,
+           e.updated_at = datetime()
+     MERGE (client)-[:ENGAGED]->(ca)
+     MERGE (st:ServiceType {vertical: $vertical, slug: $serviceTypeSlug})
+     MERGE (ca)-[:SPECIALIZES_IN]->(st)`,
+    {
+      clientRoleProfileId: payload.client_role_profile_id,
+      caRoleProfileId: payload.ca_role_profile_id,
+      engagementId: payload.engagement_id,
+      vertical: payload.vertical,
+      serviceTypeSlug: payload.service_type_slug,
       status: payload.status,
     }
   );
