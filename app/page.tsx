@@ -35,7 +35,7 @@ export default async function StatusPage() {
         <li>
           <code>POST /api/payments/smoke-test</code> — exercises the mock payment gateway end to
           end. Requires a POST request (visiting this URL directly returns 405 — see{" "}
-          <code>README.md</code>'s Local development section for a working <code>curl</code>{" "}
+          <code>README.md</code>&apos;s Local development section for a working <code>curl</code>{" "}
           example):
           <br />
           <code>{origin}/api/payments/smoke-test</code>
