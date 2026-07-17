@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { checkNeo4jConnectivity } from "@/lib/neo4j/client";
+import { getEntitySyncQueueStats } from "@/lib/entity-graph/sync";
 
 // Structured connection check for both stores this foundation depends on —
 // same pattern as homeai/homeai's /api/diagnostics: one JSON object naming
@@ -80,6 +81,23 @@ export async function GET() {
     (report.supabase as Record<string, unknown>).hint =
       "Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and SUPABASE_SERVICE_ROLE_KEY. " +
       "On Cloudflare, these must be set under Settings > Builds > Build variables and secrets, then redeploy.";
+  }
+
+  // --- Entity sync queue backlog (MVP item #4 —
+  // ../../entity-graph/data-sync-architecture.md §4) ---
+  // Only meaningful once Supabase is reachable; gated the same way the
+  // Supabase status check above is. The difference between silently falling
+  // behind and finding out immediately, same philosophy as the
+  // Supabase/Neo4j checks themselves.
+  if (supabaseUrl && publishableKeyConfigured && serviceRoleKeyConfigured) {
+    try {
+      report.entitySyncQueue = await getEntitySyncQueueStats();
+    } catch (err) {
+      report.entitySyncQueue = {
+        status: "error",
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   // --- Neo4j ---

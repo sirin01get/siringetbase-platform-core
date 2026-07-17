@@ -1,10 +1,12 @@
 import { NextResponse } from "next/server";
 import { drainEntitySyncQueue } from "@/lib/entity-graph/sync";
 
-// Manually-triggerable drain of the Postgres→Neo4j sync outbox. Meant to be
-// wired to a Cloudflare Cron Trigger once deployed (e.g. every minute) —
-// exposed as a POST route in the meantime so it can be exercised by hand or
-// called from a scheduled task before real cron wiring exists.
+// Manually-triggerable drain of the Postgres→Neo4j sync outbox. A
+// Cloudflare Cron Trigger (../../../../worker.ts's scheduled() handler,
+// wrangler.jsonc's triggers.crons — every minute) now drains this
+// automatically in production; this route stays for manual exercising,
+// testing, and forcing an immediate drain without waiting for the next
+// cron tick.
 //
 // No auth gate yet, deliberately flagged: this is a dev-phase convenience
 // route, same posture as homeai's /api/ai/smoke-test — protect or remove

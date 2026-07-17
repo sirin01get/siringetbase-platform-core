@@ -5,9 +5,9 @@ Phase 0 of the Siringetbase build: Identity, Entity Graph, and Payments, as desi
 ## What's real in this phase
 
 - Project structure, Cloudflare deployment pipeline (Next.js + `@opennextjs/cloudflare`), same pattern as `homeai/homeai` and `graphknowledge/graph-app`.
-- Supabase schema (`supabase/migrations/0001_init.sql`): `role_profiles`, `businesses`, the Payments skeleton (`payments`, `invoices`, `escrow_holds`, `commission_ledger`, `payout_accounts`, `provider_transactions`), and `entity_sync_queue` — the Postgres→Neo4j sync outbox — all with Row-Level Security.
+- Supabase schema (`supabase/migrations/0001_init.sql` + `0002_sync_retry_hardening.sql`): `role_profiles`, `businesses`, the Payments skeleton (`payments`, `invoices`, `escrow_holds`, `commission_ledger`, `payout_accounts`, `provider_transactions`), and `entity_sync_queue` — the Postgres→Neo4j sync outbox, with retry/backoff columns — all with Row-Level Security.
 - Neo4j bootstrap (`src/lib/neo4j/schema.cypher`): constraints/indexes for `:Person`, `:Business`, `:ServiceProvider`, `:Engagement`, `:ServiceType`. Talks to Neo4j over its **Query API** (plain HTTPS via `fetch()`, `src/lib/neo4j/client.ts`), not `neo4j-driver`/Bolt — Cloudflare Workers cannot open the raw TCP connection Bolt needs, so the Bolt driver cannot work here at all, regardless of configuration. See Troubleshooting below.
-- Entity-graph sync (`src/lib/entity-graph/sync.ts`, `POST /api/entity-graph/sync`): drains the outbox, upserts Neo4j nodes. A role in `SERVICE_PROVIDER_ROLES` (currently `ca`, `builder`, `architect`) gets an additional `:ServiceProvider` label — this is also what `../billing/` uses to decide who owes revenue-share.
+- Entity-graph sync (`src/lib/entity-graph/sync.ts`): drains the outbox on a **Cloudflare Cron Trigger** (`worker.ts`, every minute — see `../entity-graph/data-sync-architecture.md`), batches Neo4j writes by label combination, retries failed rows with exponential backoff up to 5 attempts before marking them `dead_letter`, and reports queue backlog (`pendingCount`, `oldestPendingAgeSeconds`, `deadLetterCount`) via `/api/diagnostics`. Also exposed as `POST /api/entity-graph/sync` for manual/immediate draining. A role in `SERVICE_PROVIDER_ROLES` (currently `ca`, `builder`, `architect`) gets an additional `:ServiceProvider` label — this is also what `../billing/` uses to decide who owes revenue-share.
 - Payments (`src/lib/payments/`): `PaymentGatewayPort` + `BankPayoutPort` interfaces, seven mock adapters (Razorpay/PayU/Cashfree for collection; ICICI/HDFC/Axis/SBI for payout), an env-driven registry, and the `hold`/`release`/`reverse` escrow primitives.
 - **Not real yet**: `../billing/`'s subscription/cost-plus/revenue-share tables (a follow-up migration), any real gateway/bank integration (mocks only, by design — see `../payments/README.md`), and no UI beyond a placeholder status page (siringetbase owns no product screens — see `../design-system/README.md`).
 
@@ -29,6 +29,8 @@ npx supabase db push
 ```
 
 `0001_init.sql` creates everything in a dedicated **`siringetbase`** schema, not `public` — same reasoning as `homeai/homeai`'s migration: avoids collision with anything else sharing the project (a vertical's own schema, Supabase's own objects), and is why the migration is safe to re-run from scratch (`drop schema if exists siringetbase cascade` at the top) while there's no real data yet — **remove that line before this ever runs against a project with real users**.
+
+`0002_sync_retry_hardening.sql` is additive — adds `attempts`/`next_attempt_at` columns and a `dead_letter` status to `entity_sync_queue` for retry-with-backoff (see `../entity-graph/data-sync-architecture.md` §4). Safe to run even after real data exists; `npx supabase db push` picks up both migrations in order. If running by hand via Supabase Studio's SQL Editor instead (see the CLI-flakiness note below), run `0001_init.sql` first, then `0002_sync_retry_hardening.sql`.
 
 ### Exposing the `siringetbase` schema (one-time, per Supabase project)
 

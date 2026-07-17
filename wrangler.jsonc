@@ -1,7 +1,11 @@
 {
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "siringetbase-platform-core",
-	"main": ".open-next/worker.js",
+	// Points at the custom entrypoint (../worker.ts), not directly at the
+	// OpenNext-generated .open-next/worker.js — see that file's header
+	// comment for why: it wraps the generated fetch handler and adds the
+	// scheduled() handler the Cron Trigger below needs.
+	"main": "worker.ts",
 	"compatibility_date": "2026-07-17",
 	"compatibility_flags": [
 		"nodejs_compat"
@@ -9,6 +13,14 @@
 	"assets": {
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
+	},
+	// Drains the Postgres -> Neo4j entity_sync_queue outbox every minute —
+	// see worker.ts's scheduled() handler and
+	// siringetbase/entity-graph/data-sync-architecture.md §4, MVP item #1.
+	// Every-1-minute is a reasonable starting cadence for Phase 0 volume;
+	// revisit if the queue's write volume ever makes this too chatty.
+	"triggers": {
+		"crons": ["*/1 * * * *"]
 	},
 	// Workers AI binding — shared Model Gateway provider for Document
 	// Intelligence and Knowledge RAG (see ../document-intelligence/README.md,
