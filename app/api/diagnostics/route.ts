@@ -47,10 +47,25 @@ export async function GET() {
         // tells us nothing, so fall back to a raw fetch against the same
         // endpoint and report the real HTTP status + response body verbatim.
         if (!error.message) {
-          (report.supabase as Record<string, unknown>).rawProbe = await rawSupabaseProbe(
-            supabaseUrl,
-            process.env.SUPABASE_SERVICE_ROLE_KEY as string
-          );
+          const rawProbe = await rawSupabaseProbe(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY as string);
+          (report.supabase as Record<string, unknown>).rawProbe = rawProbe;
+          // The wrapped PostgrestError.message was blank, but the raw probe's
+          // body is the same JSON PostgREST always returns — re-run it
+          // through the same hint logic so the report is still actionable
+          // instead of stuck on the generic fallback.
+          if ("body" in rawProbe) {
+            try {
+              const parsed = JSON.parse(rawProbe.body) as { message?: string; code?: string };
+              (report.supabase as Record<string, unknown>).hint = diagnoseSupabaseHint(
+                parsed.message ?? "",
+                parsed.code
+              );
+            } catch {
+              // Body wasn't JSON (e.g. an HTML error page from a proxy/edge in
+              // front of PostgREST) — leave the generic hint, httpStatus/body
+              // in rawProbe is the best available signal at that point.
+            }
+          }
         }
       } else {
         (report.supabase as Record<string, unknown>).status = "ok";
@@ -73,7 +88,17 @@ export async function GET() {
     const connectivity = await checkNeo4jConnectivity();
     report.neo4j = connectivity.ok
       ? { status: "ok" }
-      : { status: "connection-error", error: connectivity.error };
+      : {
+          status: "connection-error",
+          error: connectivity.error,
+          // Tier 1 secret (../../security/README.md) — never echo the full
+          // URI. Just the scheme prefix (e.g. "neo4j+s") is enough to prove
+          // whether the value is malformed, with no host/credentials exposed.
+          uriScheme: process.env.NEO4J_URI?.includes("://")
+            ? process.env.NEO4J_URI.split("://")[0]
+            : "(no '://' found in value)",
+          uriLength: process.env.NEO4J_URI?.length ?? 0,
+        };
   } else {
     report.neo4j = {
       status: "unconfigured",
