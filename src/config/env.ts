@@ -17,7 +17,13 @@ export const env = {
   // Supabase — Postgres system of record for identity + payments
   // (siringetbase schema, not public — see supabase/migrations/0001_init.sql)
   supabaseUrl: () => required("NEXT_PUBLIC_SUPABASE_URL", process.env.NEXT_PUBLIC_SUPABASE_URL),
-  supabaseAnonKey: () => required("NEXT_PUBLIC_SUPABASE_ANON_KEY", process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+  // Publishable key (sb_publishable_...) — Supabase's current replacement
+  // for the legacy anon key, same low-privilege semantics (RLS behaves the
+  // same), same client-safe/public exposure model. Legacy anon keys are
+  // being deprecated end of 2026 — see
+  // https://supabase.com/docs/guides/getting-started/migrating-to-new-api-keys.
+  supabasePublishableKey: () =>
+    required("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY", process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY),
   supabaseServiceRoleKey: () =>
     required("SUPABASE_SERVICE_ROLE_KEY", process.env.SUPABASE_SERVICE_ROLE_KEY),
 
@@ -27,6 +33,12 @@ export const env = {
   neo4jUri: () => required("NEO4J_URI", process.env.NEO4J_URI),
   neo4jUser: () => required("NEO4J_USER", process.env.NEO4J_USER),
   neo4jPassword: () => required("NEO4J_PASSWORD", process.env.NEO4J_PASSWORD),
+  // Optional — defaults to "neo4j", which is correct for most fresh AuraDB
+  // Free/Professional instances, but not universal (confirmed the hard way:
+  // some instances use a different database name). Check Aura console →
+  // your instance → Connect, or run `SHOW DATABASES` in Neo4j Browser, if
+  // the default doesn't work.
+  neo4jDatabase: () => process.env.NEO4J_DATABASE ?? "neo4j",
 
   // Payments — which mock adapter is active behind PaymentGatewayPort /
   // BankPayoutPort (see ../../payments/README.md). Provider *names* are not

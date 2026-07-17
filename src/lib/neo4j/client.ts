@@ -19,15 +19,10 @@ import { env } from "@/config/env";
 // for copying it straight from Aura's Connect screen don't change — this
 // module just takes the hostname portion and always talks HTTPS to it.
 
-// Aura's database name is always "neo4j" regardless of what the instance ID
-// looks like — see ../../README.md Troubleshooting for why. Only relevant
-// if this ever runs against a self-managed multi-database instance instead.
-const DATABASE_NAME = "neo4j";
-
 function queryApiUrl(): string {
   const raw = env.neo4jUri();
   const host = raw.includes("://") ? raw.split("://")[1] : raw;
-  return `https://${host}/db/${DATABASE_NAME}/query/v2`;
+  return `https://${host}/db/${env.neo4jDatabase()}/query/v2`;
 }
 
 // UTF-8-safe base64 encoding for the Basic auth header — deliberately not
@@ -98,9 +93,9 @@ export async function runCypher(
 
   const json = (await res.json()) as QueryApiResponse;
 
-  if (json.errors && json.errors.length > 0) {
-    const first = json.errors[0];
-    throw new Neo4jQueryError(first.message, first.code);
+  const firstError = json.errors?.[0];
+  if (firstError) {
+    throw new Neo4jQueryError(firstError.message, firstError.code);
   }
 
   const fields = json.data?.fields ?? [];
