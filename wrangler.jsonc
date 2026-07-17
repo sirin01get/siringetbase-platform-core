@@ -21,9 +21,10 @@
 		"PAYMENT_GATEWAY_PROVIDER": "razorpay-mock",
 		"BANK_PAYOUT_PROVIDER": "icici-mock"
 	}
-	// Vectorize (Knowledge RAG) and a Neo4j connection are not Workers
-	// bindings — Vectorize gets added when knowledge-rag is actually built;
-	// Neo4j is reached over its own driver connection (see src/lib/neo4j/),
-	// credentials via Worker Secrets (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD),
-	// never in this file — see ../security/README.md Tier 1.
+	// Vectorize (Knowledge RAG) and Neo4j are not Workers bindings — Vectorize
+	// gets added when knowledge-rag is actually built; Neo4j is reached over
+	// its Query API (plain HTTPS via fetch(), see src/lib/neo4j/client.ts —
+	// Bolt/neo4j-driver needs raw TCP, which Workers can't open), credentials
+	// via Worker Secrets (NEO4J_URI / NEO4J_USER / NEO4J_PASSWORD), never in
+	// this file — see ../security/README.md Tier 1.
 }

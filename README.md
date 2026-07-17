@@ -6,7 +6,7 @@ Phase 0 of the Siringetbase build: Identity, Entity Graph, and Payments, as desi
 
 - Project structure, Cloudflare deployment pipeline (Next.js + `@opennextjs/cloudflare`), same pattern as `homeai/homeai` and `graphknowledge/graph-app`.
 - Supabase schema (`supabase/migrations/0001_init.sql`): `role_profiles`, `businesses`, the Payments skeleton (`payments`, `invoices`, `escrow_holds`, `commission_ledger`, `payout_accounts`, `provider_transactions`), and `entity_sync_queue` — the Postgres→Neo4j sync outbox — all with Row-Level Security.
-- Neo4j bootstrap (`src/lib/neo4j/schema.cypher`): constraints/indexes for `:Person`, `:Business`, `:ServiceProvider`, `:Engagement`, `:ServiceType`.
+- Neo4j bootstrap (`src/lib/neo4j/schema.cypher`): constraints/indexes for `:Person`, `:Business`, `:ServiceProvider`, `:Engagement`, `:ServiceType`. Talks to Neo4j over its **Query API** (plain HTTPS via `fetch()`, `src/lib/neo4j/client.ts`), not `neo4j-driver`/Bolt — Cloudflare Workers cannot open the raw TCP connection Bolt needs, so the Bolt driver cannot work here at all, regardless of configuration. See Troubleshooting below.
 - Entity-graph sync (`src/lib/entity-graph/sync.ts`, `POST /api/entity-graph/sync`): drains the outbox, upserts Neo4j nodes. A role in `SERVICE_PROVIDER_ROLES` (currently `ca`, `builder`, `architect`) gets an additional `:ServiceProvider` label — this is also what `../billing/` uses to decide who owes revenue-share.
 - Payments (`src/lib/payments/`): `PaymentGatewayPort` + `BankPayoutPort` interfaces, seven mock adapters (Razorpay/PayU/Cashfree for collection; ICICI/HDFC/Axis/SBI for payout), an env-driven registry, and the `hold`/`release`/`reverse` escrow primitives.
 - **Not real yet**: `../billing/`'s subscription/cost-plus/revenue-share tables (a follow-up migration), any real gateway/bank integration (mocks only, by design — see `../payments/README.md`), and no UI beyond a placeholder status page (siringetbase owns no product screens — see `../design-system/README.md`).
@@ -56,6 +56,32 @@ curl -X POST http://localhost:3000/api/entity-graph/sync
 ## Troubleshooting
 
 `GET /api/diagnostics` checks both Supabase and Neo4j connectivity and names exactly which layer is broken (missing env var, schema not exposed, migration not run, bad credentials) — same pattern as `homeai/homeai`'s diagnostics route. Check this first before digging into DevTools.
+
+### Neo4j: why this uses the Query API instead of `neo4j-driver`
+
+Neo4j's Bolt protocol (what the official `neo4j-driver` package speaks) requires a raw TCP socket. Cloudflare Workers cannot open arbitrary TCP connections — Cloudflare has TCP/QUIC socket support in the pipeline, but `neo4j-driver` doesn't yet have a Workers-compatible transport built on it. Symptom if you try anyway: URI/credentials check out, but the driver reports `Could not perform discovery. No routing servers available` with an empty routing table — it never manages a real Bolt handshake, it just times out silently and reports nothing found.
+
+The fix isn't configuration — it's transport. `src/lib/neo4j/client.ts` talks to Neo4j's **Query API** instead: plain HTTPS, POST a Cypher statement, get JSON back, works with `fetch()` exactly like any other Worker code. It's the officially supported route for environments without TCP (introduced Neo4j 5.19, enabled by default, and the only way in on Aura, which only exposes HTTPS on port 443 for it — see [Neo4j Query API docs](https://neo4j.com/docs/query-api/current/)). `NEO4J_URI` is still stored in its familiar `neo4j+s://...` Bolt form so the Aura Connect-screen copy/paste instructions above don't change — the client takes the hostname portion and always speaks HTTPS to it.
+
+If you're extending `src/lib/entity-graph/sync.ts` or adding new Neo4j-backed features elsewhere in Siringetbase, use `runCypher()` from `src/lib/neo4j/client.ts`, not `neo4j-driver` directly — and apply the same Query-API approach in any other module on this Cloudflare + Next.js + OpenNext stack (`homeai/homeai`, `buildfocus/*`) that needs Neo4j from a Worker.
+
+### Cloudflare env vars: build-time vs runtime — and how to prove which one you're getting
+
+`NEXT_PUBLIC_*` vars are inlined into the compiled bundle at `next build` time — once built, they're hardcoded strings, not live lookups. This means they must be set under **Settings > Build > Build variables and secrets** on the Worker (only available to the build step), not **Settings > Variables & Secrets** (runtime-only, has zero effect on already-inlined values). Everything else (`SUPABASE_SERVICE_ROLE_KEY`, `NEO4J_URI`, `NEO4J_USER`, `NEO4J_PASSWORD`) is server-only and read live via `process.env` at request time, so those belong in **Variables & Secrets** instead.
+
+A boolean "configured: true/false" check cannot tell these two failure modes apart — a stale build with a placeholder baked in looks identical to a correctly-configured one, since the placeholder string is still non-empty. When a `connection-error` doesn't make sense given what's set in the dashboard, add a step that echoes the actual resolved value of any `NEXT_PUBLIC_*` var directly in the diagnostics response instead of just a boolean — it's safe to do this because `NEXT_PUBLIC_*` values are already shipped in client-side JS in production, so nothing sensitive is exposed by printing them server-side too:
+
+```ts
+report.supabase = {
+  resolvedUrl: supabaseUrl ?? null, // not a secret — already public in the client bundle
+  urlConfigured: Boolean(supabaseUrl),
+  // ...
+};
+```
+
+If `resolvedUrl` shows a placeholder or an unexpected value, the fix is a fresh build with the real build variable set (an empty commit is enough to retrigger Workers Builds' Git integration) — not a runtime secret change, which won't touch it. Apply this same pattern to any other module built on this Cloudflare + Next.js + OpenNext stack (`homeai/homeai`, `buildfocus/*`) if it ever shows a similarly unexplainable `NEXT_PUBLIC_*`-related connection error.
+
+**Additional read — `in` narrowing vs `typeof` narrowing on probe results.** If you extend the raw-probe pattern above (bypassing an SDK to hit an API directly for a clearer error), prefer `typeof value === "string"` over `"key" in value` when narrowing a function's inferred return union. `in` narrowing is only fully reliable on **discriminated unions** — every member sharing a literal tag field TypeScript can check unambiguously (`{ kind: "ok"; body: string } | { kind: "error"; message: string }`). Two structurally disjoint shapes with no shared tag, especially when the union comes from inference on an `async` function rather than an explicit type annotation, is a weaker case — `"body" in rawProbe` may not fully eliminate `undefined` from `rawProbe.body` afterward, producing a `string | undefined` type error at the call site even though the property is genuinely always a string in that branch at runtime. `typeof` narrows on the value's own runtime type directly, independent of how the surrounding union was inferred, so it doesn't depend on TypeScript having tracked the union shape correctly. The more root-cause fix is to give the probe function an explicit return type annotation (removing the inference step) rather than leaning on narrowing to compensate for an implicit one — see `rawSupabaseProbe`'s signature in `app/api/diagnostics/route.ts` for the pattern.
 
 ## Deployment
 

@@ -1,5 +1,4 @@
-import type { Session } from "neo4j-driver";
-import { getNeo4jDriver } from "@/lib/neo4j/client";
+import { runCypher } from "@/lib/neo4j/client";
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 
 // Roles that make an entity a `:ServiceProvider` in the entity graph — and,
@@ -25,16 +24,17 @@ interface SyncQueueItem {
 
 // Drains up to `batchSize` pending entity_sync_queue rows (see
 // 0001_init.sql's enqueue_entity_sync trigger), upserting the corresponding
-// node in Neo4j for each. Postgres stays the source of truth throughout —
-// this function only ever reads from Postgres and writes to Neo4j, never
-// the reverse (../../entity-graph/README.md's sync contract).
+// node in Neo4j for each via the Query API (../../src/lib/neo4j/client.ts —
+// no Bolt session/connection pool to manage here, each row is one stateless
+// HTTPS request). Postgres stays the source of truth throughout — this
+// function only ever reads from Postgres and writes to Neo4j, never the
+// reverse (../../entity-graph/README.md's sync contract).
 //
 // Intended to run on a schedule (Cloudflare Cron Trigger) once deployed;
 // exposed via app/api/entity-graph/sync/route.ts for manual/scheduled
 // invocation in the meantime.
 export async function drainEntitySyncQueue(batchSize = 50): Promise<{ processed: number; failed: number }> {
   const supabase = createSupabaseServiceRoleClient();
-  const driver = getNeo4jDriver();
 
   const { data: items, error } = await supabase
     .from("entity_sync_queue")
@@ -50,10 +50,9 @@ export async function drainEntitySyncQueue(batchSize = 50): Promise<{ processed:
   let failed = 0;
 
   for (const item of items as SyncQueueItem[]) {
-    const session = driver.session();
     try {
       if (item.operation === "upsert") {
-        await upsertNode(session, item);
+        await upsertNode(item);
       }
       // 'delete' intentionally unimplemented in Phase 0 — no vertical
       // soft-deletes a role_profile yet. Add a matching case here when one does.
@@ -73,15 +72,13 @@ export async function drainEntitySyncQueue(batchSize = 50): Promise<{ processed:
         })
         .eq("id", item.id);
       failed += 1;
-    } finally {
-      await session.close();
     }
   }
 
   return { processed, failed };
 }
 
-async function upsertNode(session: Session, item: SyncQueueItem) {
+async function upsertNode(item: SyncQueueItem) {
   const { payload } = item;
   const isServiceProvider = SERVICE_PROVIDER_ROLES.has(payload.role);
   const baseLabel = payload.user_id ? "Person" : "Business";
@@ -94,7 +91,7 @@ async function upsertNode(session: Session, item: SyncQueueItem) {
   // MERGE on role_profile_id (the uniqueness constraint key from
   // schema.cypher) — idempotent, so reprocessing a row after a partial
   // failure never creates a duplicate node.
-  await session.run(
+  await runCypher(
     `MERGE (n:${labels} {role_profile_id: $roleProfileId})
      SET n.vertical = $vertical,
          n.role = $role,
