@@ -40,6 +40,18 @@ export async function GET() {
           error.message,
           (error as { code?: string }).code
         );
+        // supabase-js's PostgrestError can come back with an empty .message
+        // for some failure shapes (e.g. the PostgREST server responding with
+        // a non-standard body, or a proxy/edge intercepting the request
+        // before it reaches PostgREST). When that happens the wrapped error
+        // tells us nothing, so fall back to a raw fetch against the same
+        // endpoint and report the real HTTP status + response body verbatim.
+        if (!error.message) {
+          (report.supabase as Record<string, unknown>).rawProbe = await rawSupabaseProbe(
+            supabaseUrl,
+            process.env.SUPABASE_SERVICE_ROLE_KEY as string
+          );
+        }
       } else {
         (report.supabase as Record<string, unknown>).status = "ok";
         (report.supabase as Record<string, unknown>).roleProfilesCount = count ?? 0;
@@ -70,6 +82,30 @@ export async function GET() {
   }
 
   return NextResponse.json(report);
+}
+
+// Bypasses supabase-js entirely — hits PostgREST directly so a blank
+// PostgrestError.message can't hide the real HTTP status/body. Same
+// Accept-Profile header supabase-js sets internally for a schema-scoped
+// request, so this reproduces exactly what the SDK call did.
+async function rawSupabaseProbe(url: string, serviceRoleKey: string) {
+  try {
+    const res = await fetch(`${url}/rest/v1/role_profiles?select=id&limit=1`, {
+      headers: {
+        apikey: serviceRoleKey,
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Accept-Profile": "siringetbase",
+      },
+    });
+    const bodyText = await res.text();
+    return {
+      httpStatus: res.status,
+      httpStatusText: res.statusText,
+      body: bodyText.slice(0, 500), // cap it — never expects secrets, but keep the report small
+    };
+  } catch (err) {
+    return { fetchThrew: err instanceof Error ? err.message : String(err) };
+  }
 }
 
 function diagnoseSupabaseHint(message: string, code: string | null | undefined): string {
