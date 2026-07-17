@@ -53,7 +53,7 @@ export async function GET() {
           // body is the same JSON PostgREST always returns — re-run it
           // through the same hint logic so the report is still actionable
           // instead of stuck on the generic fallback.
-          if ("body" in rawProbe) {
+          if ("body" in rawProbe && typeof rawProbe.body === "string") {
             try {
               const parsed = JSON.parse(rawProbe.body) as { message?: string; code?: string };
               (report.supabase as Record<string, unknown>).hint = diagnoseSupabaseHint(
@@ -113,7 +113,10 @@ export async function GET() {
 // PostgrestError.message can't hide the real HTTP status/body. Same
 // Accept-Profile header supabase-js sets internally for a schema-scoped
 // request, so this reproduces exactly what the SDK call did.
-async function rawSupabaseProbe(url: string, serviceRoleKey: string) {
+async function rawSupabaseProbe(
+  url: string,
+  serviceRoleKey: string
+): Promise<{ httpStatus: number; httpStatusText: string; body: string } | { fetchThrew: string }> {
   try {
     const res = await fetch(`${url}/rest/v1/role_profiles?select=id&limit=1`, {
       headers: {
