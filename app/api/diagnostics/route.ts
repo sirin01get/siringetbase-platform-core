@@ -11,7 +11,7 @@ export async function GET() {
 
   // --- Supabase ---
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const anonKeyConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
+  const publishableKeyConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
   const serviceRoleKeyConfigured = Boolean(process.env.SUPABASE_SERVICE_ROLE_KEY);
 
   report.supabase = {
@@ -22,11 +22,11 @@ export async function GET() {
     // real value, which a "configured: true/false" check cannot distinguish.
     resolvedUrl: supabaseUrl ?? null,
     urlConfigured: Boolean(supabaseUrl),
-    anonKeyConfigured,
+    publishableKeyConfigured,
     serviceRoleKeyConfigured,
   };
 
-  if (supabaseUrl && anonKeyConfigured && serviceRoleKeyConfigured) {
+  if (supabaseUrl && publishableKeyConfigured && serviceRoleKeyConfigured) {
     try {
       const supabase = createSupabaseServiceRoleClient();
       const { error, count } = await supabase
@@ -78,7 +78,7 @@ export async function GET() {
   } else {
     (report.supabase as Record<string, unknown>).status = "unconfigured";
     (report.supabase as Record<string, unknown>).hint =
-      "Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_ANON_KEY, and SUPABASE_SERVICE_ROLE_KEY. " +
+      "Set NEXT_PUBLIC_SUPABASE_URL, NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY, and SUPABASE_SERVICE_ROLE_KEY. " +
       "On Cloudflare, these must be set under Settings > Builds > Build variables and secrets, then redeploy.";
   }
 

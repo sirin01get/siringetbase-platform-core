@@ -12,7 +12,7 @@ import { env } from "@/config/env";
 // setting (see README.md's setup section), same requirement homeai's
 // client.ts documents for its own `homeai` schema.
 export function createSupabaseBrowserClient() {
-  return createBrowserClient<Database, "siringetbase">(env.supabaseUrl(), env.supabaseAnonKey(), {
+  return createBrowserClient<Database, "siringetbase">(env.supabaseUrl(), env.supabasePublishableKey(), {
     db: { schema: "siringetbase" },
   });
 }

@@ -34,7 +34,7 @@ jobs:
           # referenced at build time. Replace with real repo secrets once
           # this is actually deployed.
           NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
-          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY: sb_publishable_placeholder
           SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
           NEO4J_URI: neo4j+s://placeholder.databases.neo4j.io
           NEO4J_USER: placeholder

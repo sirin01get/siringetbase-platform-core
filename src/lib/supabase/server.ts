@@ -9,7 +9,7 @@ import { env } from "@/config/env";
 // honor RLS server-side.
 export async function createSupabaseServerClient() {
   const cookieStore = await cookies();
-  return createServerClient<Database, "siringetbase">(env.supabaseUrl(), env.supabaseAnonKey(), {
+  return createServerClient<Database, "siringetbase">(env.supabaseUrl(), env.supabasePublishableKey(), {
     db: { schema: "siringetbase" },
     cookies: {
       getAll: () => cookieStore.getAll(),
