@@ -9,6 +9,27 @@ import { getPaymentGateway, getBankPayout } from "@/lib/payments/registry";
 //
 // POST with { "forceFail": true } to exercise the simulated-failure path
 // instead of the happy path.
+//
+// GET is handled separately below purely so visiting this URL directly in a
+// browser (which sends GET) gets a helpful explanation instead of
+// Cloudflare's generic, unstyled 405 error page — cosmetic only, doesn't
+// change what the endpoint actually requires.
+export async function GET() {
+  return NextResponse.json(
+    {
+      error: "This endpoint requires POST, not GET.",
+      hint: "Visiting the URL directly in a browser sends a GET request — that's why you're seeing this instead of a result.",
+      usage: {
+        curl: 'curl -X POST <this-url> -H "Content-Type: application/json" -d "{}"',
+        forceFailVariant: 'curl -X POST <this-url> -H "Content-Type: application/json" -d "{\\"forceFail\\": true}"',
+        powershell:
+          'Invoke-RestMethod -Uri "<this-url>" -Method Post -ContentType "application/json" -Body "{}"',
+      },
+    },
+    { status: 405 }
+  );
+}
+
 export async function POST(request: Request) {
   const body = await request.json().catch(() => ({}));
   const forceFail = Boolean(body?.forceFail);
