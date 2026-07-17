@@ -1,0 +1,6 @@
+-- Phase 0: nothing to seed yet. Unlike homeai's regional_modules (reference
+-- data the app needs to function), siringetbase's tables are all either
+-- user-created (businesses, role_profiles) or system-generated (payments,
+-- entity_sync_queue) — there's no reference/lookup data this foundation
+-- needs pre-populated. Revisit once billing/subscription_plans exists
+-- (../../billing/README.md) — plan definitions will likely be seeded here.

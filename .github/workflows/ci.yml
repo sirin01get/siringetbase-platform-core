@@ -1,0 +1,41 @@
+name: CI
+
+# Same posture as homeai/homeai's ci.yml: lint + typecheck + build on every
+# push/PR, a verification gate rather than the deploy mechanism. Deploys, if
+# this ever needs deploying independently, would go through Cloudflare
+# Workers Builds' own Git integration — not added here, to avoid a
+# double-deploy race, consistent with the decision already made for homeai.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run typecheck
+
+      - run: npm run build
+        env:
+          # Placeholder values so the build doesn't fail on missing env vars
+          # referenced at build time. Replace with real repo secrets once
+          # this is actually deployed.
+          NEXT_PUBLIC_SUPABASE_URL: https://placeholder.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: placeholder-anon-key
+          SUPABASE_SERVICE_ROLE_KEY: placeholder-service-role-key
+          NEO4J_URI: neo4j+s://placeholder.databases.neo4j.io
+          NEO4J_USER: placeholder
+          NEO4J_PASSWORD: placeholder

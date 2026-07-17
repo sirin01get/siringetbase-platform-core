@@ -1,0 +1,38 @@
+{
+  "name": "siringetbase-platform-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Siringetbase platform core — Identity, Entity Graph, and Payments foundation (Phase 0)",
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "cf:build": "opennextjs-cloudflare build",
+    "start": "next start",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+  },
+  "dependencies": {
+    "next": "^15.4.0",
+    "react": "19.1.0",
+    "react-dom": "19.1.0",
+    "@supabase/supabase-js": "2.45.4",
+    "@supabase/ssr": "0.5.1",
+    "neo4j-driver": "^5.24.0"
+  },
+  "devDependencies": {
+    "@opennextjs/cloudflare": "^1.3.0",
+    "@types/node": "22.5.0",
+    "@types/react": "19.1.0",
+    "@types/react-dom": "19.1.0",
+    "typescript": "5.6.2",
+    "tailwindcss": "3.4.10",
+    "postcss": "8.4.45",
+    "autoprefixer": "10.4.20",
+    "eslint": "9.9.1",
+    "eslint-config-next": "15.4.0",
+    "wrangler": "^4.20.0"
+  }
+}
