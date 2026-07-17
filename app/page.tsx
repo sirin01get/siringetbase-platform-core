@@ -40,6 +40,11 @@ export default async function StatusPage() {
           <br />
           <code>{origin}/api/payments/smoke-test</code>
         </li>
+        <li>
+          <a href={`${origin}/admin/sync-queue`}>{origin}/admin/sync-queue</a> — admin view of unsynced
+          entity_sync_queue rows (dead-lettered, legacy failed, or still backing off), with a manual
+          retry-and-push action.
+        </li>
       </ul>
     </main>
   );

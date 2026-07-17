@@ -167,6 +167,9 @@ export interface Database {
         Update: Partial<Database["siringetbase"]["Tables"]["provider_transactions"]["Insert"]>;
       };
       entity_sync_queue: {
+        // attempts/next_attempt_at and the 'dead_letter' status come from
+        // supabase/migrations/0002_sync_retry_hardening.sql — see
+        // ../entity-graph/data-sync-architecture.md §4 and src/lib/entity-graph/sync.ts.
         Row: {
           id: string;
           entity_type: "person" | "business" | "service_provider";
@@ -174,7 +177,9 @@ export interface Database {
           vertical: string;
           operation: "upsert" | "delete";
           payload: Record<string, unknown>;
-          status: "pending" | "processed" | "failed";
+          status: "pending" | "processed" | "failed" | "dead_letter";
+          attempts: number;
+          next_attempt_at: string;
           error: string | null;
           created_at: string;
           processed_at: string | null;
@@ -186,7 +191,9 @@ export interface Database {
           vertical: string;
           operation: "upsert" | "delete";
           payload: Record<string, unknown>;
-          status?: "pending" | "processed" | "failed";
+          status?: "pending" | "processed" | "failed" | "dead_letter";
+          attempts?: number;
+          next_attempt_at?: string;
           error?: string | null;
           created_at?: string;
           processed_at?: string | null;
