@@ -31,7 +31,7 @@ export interface Database {
           business_id: string | null;
           vertical: string;
           role: string;
-          status: "active" | "pending_verification" | "suspended";
+          status: "active" | "pending_verification" | "suspended" | "rejected";
           created_at: string;
         };
         Insert: {
@@ -40,7 +40,7 @@ export interface Database {
           business_id?: string | null;
           vertical: string;
           role: string;
-          status?: "active" | "pending_verification" | "suspended";
+          status?: "active" | "pending_verification" | "suspended" | "rejected";
           created_at?: string;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["role_profiles"]["Insert"]>;
@@ -300,6 +300,95 @@ export interface Database {
           completed_at?: string | null;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["extraction_jobs"]["Insert"]>;
+      };
+      // Referrals — 0005_referrals.sql. See ../../../referrals/README.md for
+      // the full design (three referral_type values, one shared ledger).
+      referrals: {
+        Row: {
+          id: string;
+          referral_type: "peer_join" | "marketer_invite" | "client_endorsement";
+          vertical: string;
+          referrer_role_profile_id: string | null;
+          referee_role_profile_id: string | null;
+          referee_email: string | null;
+          referee_intended_vertical: string | null;
+          referee_intended_role: string | null;
+          source_engagement_id: string | null;
+          status: "pending" | "accepted" | "declined" | "expired";
+          invite_token: string | null;
+          created_at: string;
+          accepted_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          referral_type: "peer_join" | "marketer_invite" | "client_endorsement";
+          vertical: string;
+          referrer_role_profile_id?: string | null;
+          referee_role_profile_id?: string | null;
+          referee_email?: string | null;
+          referee_intended_vertical?: string | null;
+          referee_intended_role?: string | null;
+          source_engagement_id?: string | null;
+          status?: "pending" | "accepted" | "declined" | "expired";
+          invite_token?: string | null;
+          created_at?: string;
+          accepted_at?: string | null;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["referrals"]["Insert"]>;
+      };
+      referral_broadcasts: {
+        Row: {
+          id: string;
+          referral_id: string;
+          recipient_role_profile_id: string | null;
+          recipient_email: string | null;
+          sent_at: string;
+          registered_role_profile_id: string | null;
+        };
+        Insert: {
+          id?: string;
+          referral_id: string;
+          recipient_role_profile_id?: string | null;
+          recipient_email?: string | null;
+          sent_at?: string;
+          registered_role_profile_id?: string | null;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["referral_broadcasts"]["Insert"]>;
+      };
+      // Comms — 0006_notification_dispatch.sql. See ../../../comms/README.md
+      // for the full design (two entry points, one pipeline, converging here).
+      notification_dispatch: {
+        Row: {
+          id: string;
+          vertical: string;
+          role: string;
+          channel: "email" | "sms" | "in_app";
+          trigger_event: string;
+          recipient_email: string;
+          recipient_role_profile_id: string | null;
+          provider: string;
+          provider_message_id: string | null;
+          status: "queued" | "sent" | "delivered" | "bounced" | "failed" | "complained";
+          error_message: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          vertical: string;
+          role: string;
+          channel?: "email" | "sms" | "in_app";
+          trigger_event: string;
+          recipient_email: string;
+          recipient_role_profile_id?: string | null;
+          provider: string;
+          provider_message_id?: string | null;
+          status?: "queued" | "sent" | "delivered" | "bounced" | "failed" | "complained";
+          error_message?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["notification_dispatch"]["Insert"]>;
       };
     };
   };

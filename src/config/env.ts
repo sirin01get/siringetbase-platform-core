@@ -55,4 +55,23 @@ export const env = {
       | "hdfc-mock"
       | "axis-mock"
       | "sbi-mock",
+
+  // Comms — shared email pipeline (../../comms/README.md). Resend is the
+  // first (and, today, only) EmailSenderPort implementation — see
+  // src/lib/comms/provider-registry.ts. All Tier 1 secrets except the
+  // from-address, which is public-facing (it's literally in every email's
+  // From: header) but still lives here for one place to change it.
+  resendApiKey: () => required("RESEND_API_KEY", process.env.RESEND_API_KEY),
+  // The exact string Supabase's dashboard shows at hook-registration time
+  // (Authentication → Hooks → Send Email), format "v1,whsec_<base64>" — see
+  // src/lib/comms/verify-webhook.ts, which strips the prefix itself.
+  sendEmailHookSecret: () => required("SEND_EMAIL_HOOK_SECRET", process.env.SEND_EMAIL_HOOK_SECRET),
+  // Must be an address on a domain verified in Resend's dashboard (SPF/DKIM/
+  // DMARC) — an unverified From: domain is the single most common reason a
+  // transactional email silently never arrives, see ../../comms/README.md's
+  // Rollout Plan step 1. Default below points at email.siringet.com, which
+  // is already Verified in Resend (confirmed 2026-07-18) — override per
+  // vertical later if each one wants its own subdomain/address instead of
+  // sharing this one.
+  commsFromEmail: () => process.env.COMMS_FROM_EMAIL ?? "CA Focus <onboarding@email.siringet.com>",
 };
