@@ -28,8 +28,9 @@ export class TemplateNotFoundError extends Error {}
 // distinct from "this role has no templates authored at all yet."
 export function getTemplate(key: TemplateKey): (data: Record<string, unknown>) => RenderedEmail {
   const roleTemplates = REGISTRY[key.vertical]?.[key.role];
-  if (roleTemplates?.[key.triggerEvent]) {
-    return roleTemplates[key.triggerEvent];
+  const exact = roleTemplates?.[key.triggerEvent];
+  if (exact) {
+    return exact;
   }
 
   const fallback = FALLBACK_TEMPLATES[key.triggerEvent];
