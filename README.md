@@ -115,6 +115,24 @@ Unlike the auth-email hook (dashboard registration required), this endpoint only
 
 A mismatched or missing secret fails loudly with a 401 from `/api/comms/notify` — check both sides match exactly, including no trailing whitespace, if `cafocus/app`'s error reports aren't reaching support.
 
+### Activating `POST /api/document-intelligence/extract` (Document Intelligence's cross-Worker call)
+
+Same shared-secret pattern as above, plus one extra one-time step since this endpoint calls Workers AI:
+
+1. Set `DOCUMENT_INTELLIGENCE_INTERNAL_SECRET` here (Settings → Variables & Secrets) to a long random value.
+2. Set the **identical** value as `DOCUMENT_INTELLIGENCE_INTERNAL_SECRET` on every calling vertical's deployment (today: `../../cafocus/app`, which also reuses its existing `PLATFORM_CORE_BASE_URL`).
+3. **Accept Meta's license for the vision model, once per Cloudflare account** — `@cf/meta/llama-3.2-11b-vision-instruct` (`src/lib/document-intelligence/model-gateway.ts`) refuses every call until this happens, and the error it returns doesn't make that obvious. Run:
+   ```bash
+   curl https://api.cloudflare.com/client/v4/accounts/<CLOUDFLARE_ACCOUNT_ID>/ai/run/@cf/meta/llama-3.2-11b-vision-instruct \
+     -H "Authorization: Bearer <CLOUDFLARE_API_TOKEN>" \
+     -d '{"prompt":"agree"}'
+   ```
+   The API token needs Workers AI edit permission. This is a one-time, per-account step — it doesn't need repeating after redeploys.
+
+A mismatched/missing secret fails loudly with a 401; a not-yet-accepted license fails with an error from the model call itself (visible in `extraction_jobs.raw_output` and platform-core's Workers logs) — check step 3 first if extraction results are all landing as `failed`.
+
+No extraction template exists yet for a document uploaded with `document_type: "other"` (or `"investment_proof"`/`"bank_statement"`) — that's expected, not a bug: `extractDocument()` returns `{ status: "skipped" }` and leaves `documents.status` at `"uploaded"`. See `../document-intelligence/README.md`'s "Template Registry, Not Template Ownership" section for which document types actually have one.
+
 ## Next
 
 Once this is live and `/api/diagnostics` reports both stores healthy: CA Focus's own Phase 0 (`../../cafocus/phases/phase-0-siringetbase-foundation/`) registers `cafocus` as a consuming vertical against this foundation.

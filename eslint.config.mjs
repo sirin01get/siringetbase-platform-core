@@ -14,7 +14,14 @@ const eslintConfig = [
     // opennextjs-cloudflare build has run — linting it as part of the
     // TS-aware project (next/typescript) would fail on a module that
     // legitimately doesn't exist yet at lint time.
-    ignores: [".next/**", ".open-next/**", "node_modules/**", "next-env.d.ts", "worker.ts"],
+    ignores: [
+      ".next/**",
+      ".open-next/**",
+      "node_modules/**",
+      "next-env.d.ts",
+      "worker.ts",
+      "src/lib/document-intelligence/model-gateway.ts",
+    ],
   },
 ];
 

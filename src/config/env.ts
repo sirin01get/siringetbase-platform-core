@@ -89,4 +89,14 @@ export const env = {
   // can never redirect a support notification to an arbitrary address; see
   // src/lib/comms/templates/support.ts and the notify route's override.
   supportInboxEmail: () => process.env.SUPPORT_INBOX_EMAIL ?? "support@email.siringet.com",
+
+  // Document Intelligence (../../document-intelligence/README.md) —
+  // app/api/document-intelligence/extract/route.ts's shared-secret header,
+  // same "single trusted caller per vertical" reasoning as
+  // commsInternalSecret() above, just a separate secret so the two internal
+  // surfaces don't share a blast radius. MUST match the calling vertical's
+  // own DOCUMENT_INTELLIGENCE_INTERNAL_SECRET exactly (e.g. cafocus/app's
+  // src/config/env.ts).
+  documentIntelligenceInternalSecret: () =>
+    required("DOCUMENT_INTELLIGENCE_INTERNAL_SECRET", process.env.DOCUMENT_INTELLIGENCE_INTERNAL_SECRET),
 };
