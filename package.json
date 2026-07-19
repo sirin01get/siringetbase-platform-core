@@ -12,7 +12,9 @@
     "typecheck": "tsc --noEmit",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
+    "db:link": "supabase link",
+    "db:push": "supabase db push"
   },
   "dependencies": {
     "next": "^15.4.0",
@@ -32,6 +34,7 @@
     "autoprefixer": "10.4.20",
     "eslint": "9.9.1",
     "eslint-config-next": "15.4.0",
-    "wrangler": "^4.20.0"
+    "wrangler": "^4.20.0",
+    "supabase": "2.109.1"
   }
 }

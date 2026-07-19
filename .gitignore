@@ -11,3 +11,4 @@ cloudflare-env.d.ts
 *.log
 .DS_Store
 supabase/.temp/
+*.tsbuildinfo
