@@ -46,3 +46,24 @@ CREATE INDEX service_provider_vertical IF NOT EXISTS FOR (sp:ServiceProvider) ON
 // (:Person)-[:REFERRED]->(:Person)
 // (:Document)-[:FEEDS]->(:Engagement)   -- Document nodes owned by
 //                                          document-intelligence, not this file
+
+// --- ServiceType adjacency seed (CA Focus, Phase 5 slice 9) -----------------
+// ../../../cafocus/phases/phase-5-marketplace-module/README.md's "Matching
+// engine" workstream calls for specialization-hierarchy matching (e.g.
+// suggesting an adjacent specialty) once the flat ServiceType set gets a
+// real hierarchy. CA Focus's three ServiceType nodes
+// (tax-filing/gst-filing/auditing — MERGE-created lazily by
+// entity-graph/sync.ts whenever a CA's service_catalog_entries sync, not
+// here) are still flat, not a tree — this is a deliberately small, honest
+// first step: a hand-picked adjacency, not a generated hierarchy.
+// tax-filing <-> gst-filing are adjacent because they're both routine
+// compliance filings a CA commonly offers together; auditing is kept
+// separate — it requires distinct qualification/experience, so suggesting
+// an auditor when someone asked for a tax-filing CA (or vice versa) would
+// be a worse match, not a helpful fallback. Revisit if CA Focus ever adds
+// more ServiceTypes — this is a static seed, not derived from any data.
+// MERGE, not CREATE — idempotent, and creates the ServiceType nodes if the
+// bootstrap script runs before any CA has published a catalog entry.
+MERGE (tf:ServiceType {vertical: 'cafocus', slug: 'tax-filing'})
+MERGE (gst:ServiceType {vertical: 'cafocus', slug: 'gst-filing'})
+MERGE (tf)-[:ADJACENT_TO]-(gst);

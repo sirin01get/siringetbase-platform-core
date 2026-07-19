@@ -477,6 +477,75 @@ export interface Database {
         };
         Update: Partial<Database["siringetbase"]["Tables"]["platform_membership_fees"]["Insert"]>;
       };
+      // Phase 5 marketplace (CA Focus) slice 10 — 0009_activity_analytics.sql.
+      // See ../../../user-analytics/README.md. Verticals write directly
+      // against these (same "shared-schema table, no cross-Worker endpoint"
+      // pattern as payout_accounts/platform_charge_rates) via their own
+      // SiringetbaseSubsetDatabase — this project has no admin surface for
+      // it yet, these types exist for consistency/future use.
+      activity_event_types: {
+        Row: {
+          event_type: string;
+          vertical: string;
+          module: string;
+          description: string;
+          drives_product_behavior: boolean;
+          created_at: string;
+        };
+        Insert: {
+          event_type: string;
+          vertical: string;
+          module: string;
+          description: string;
+          drives_product_behavior?: boolean;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["activity_event_types"]["Insert"]>;
+      };
+      activity_events: {
+        Row: {
+          id: string;
+          role_profile_id: string | null;
+          session_id: string | null;
+          vertical: string;
+          event_type: string;
+          entity_type: string | null;
+          entity_id: string | null;
+          metadata: Record<string, unknown>;
+          occurred_at: string;
+        };
+        Insert: {
+          id?: string;
+          role_profile_id?: string | null;
+          session_id?: string | null;
+          vertical: string;
+          event_type: string;
+          entity_type?: string | null;
+          entity_id?: string | null;
+          metadata?: Record<string, unknown>;
+          occurred_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["activity_events"]["Insert"]>;
+      };
+      activity_consent: {
+        Row: {
+          id: string;
+          role_profile_id: string | null;
+          session_id: string | null;
+          purpose: string;
+          granted_at: string;
+          withdrawn_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          role_profile_id?: string | null;
+          session_id?: string | null;
+          purpose?: string;
+          granted_at?: string;
+          withdrawn_at?: string | null;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["activity_consent"]["Insert"]>;
+      };
     };
   };
 }
