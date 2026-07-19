@@ -99,4 +99,14 @@ export const env = {
   // src/config/env.ts).
   documentIntelligenceInternalSecret: () =>
     required("DOCUMENT_INTELLIGENCE_INTERNAL_SECRET", process.env.DOCUMENT_INTELLIGENCE_INTERNAL_SECRET),
+
+  // Payments cross-Worker entry points (../../payments/README.md) —
+  // app/api/payments/hold/route.ts and .../release/route.ts's shared-secret
+  // header. Same "single trusted caller per vertical" reasoning and same
+  // separate-secret-per-surface posture as documentIntelligenceInternalSecret()
+  // above — a vertical's engagement-acceptance/filing-confirmation flow is
+  // the caller (e.g. cafocus/app's src/lib/marketplace/payments-client.ts),
+  // never a browser. MUST match the calling vertical's own
+  // PAYMENTS_INTERNAL_SECRET exactly.
+  paymentsInternalSecret: () => required("PAYMENTS_INTERNAL_SECRET", process.env.PAYMENTS_INTERNAL_SECRET),
 };

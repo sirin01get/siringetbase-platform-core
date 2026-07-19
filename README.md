@@ -133,6 +133,15 @@ A mismatched/missing secret fails loudly with a 401; a not-yet-accepted license 
 
 No extraction template exists yet for a document uploaded with `document_type: "other"` (or `"investment_proof"`/`"bank_statement"`) — that's expected, not a bug: `extractDocument()` returns `{ status: "skipped" }` and leaves `documents.status` at `"uploaded"`. See `../document-intelligence/README.md`'s "Template Registry, Not Template Ownership" section for which document types actually have one.
 
+### Activating `POST /api/payments/hold` and `.../release` (Payments' cross-Worker calls)
+
+Same shared-secret pattern as above — no external service to configure, unlike Document Intelligence's Meta-license step:
+
+1. Set `PAYMENTS_INTERNAL_SECRET` here (Settings → Variables & Secrets) to a long random value.
+2. Set the **identical** value as `PAYMENTS_INTERNAL_SECRET` on every calling vertical's deployment (today: `../../cafocus/app`, which also reuses its existing `PLATFORM_CORE_BASE_URL`).
+
+Both routes are thin wrappers over `src/lib/payments/escrow.ts`'s `hold()`/`release()` — the active `PaymentGatewayPort`/`BankPayoutPort` mock adapters (`PAYMENT_GATEWAY_PROVIDER`/`BANK_PAYOUT_PROVIDER`, already configured per "What's real in this phase" above) do the actual charge/payout simulation; nothing new to configure there. A mismatched/missing secret fails loudly with a 401, same as the other two internal endpoints.
+
 ## Next
 
 Once this is live and `/api/diagnostics` reports both stores healthy: CA Focus's own Phase 0 (`../../cafocus/phases/phase-0-siringetbase-foundation/`) registers `cafocus` as a consuming vertical against this foundation.
