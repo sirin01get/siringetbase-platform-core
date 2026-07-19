@@ -156,6 +156,11 @@ export async function POST(req: NextRequest) {
     return errorResponse(500, message);
   }
 
-  // Empty 200 — everything Supabase requires for a successful hook response.
-  return new NextResponse(null, { status: 200 });
+  // A bare `NextResponse(null, ...)` sends no Content-Type header at all —
+  // GoTrue's hook-response handling rejects that with "Invalid Content-Type:
+  // Missing Content-Type header" even though the body itself is optional on
+  // success. NextResponse.json() sets Content-Type: application/json for us,
+  // which is what GoTrue actually requires here (confirmed empirically —
+  // this is not documented explicitly in Supabase's Send Email Hook docs).
+  return NextResponse.json({}, { status: 200 });
 }
