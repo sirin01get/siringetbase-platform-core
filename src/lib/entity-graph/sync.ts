@@ -280,6 +280,20 @@ async function upsertNode(item: RoleProfileSyncItem): Promise<void> {
 // rather than silently dropping the relationship. See
 // ../../../cafocus/phases/phase-1-core-data-graph-model/sync-contract.md
 // for the full contract this implements.
+//
+// Also creates (:Person)-[:INITIATED]->(:Engagement)-[:WITH_PROVIDER]->
+// (:ServiceProvider) — added for Phase 5 slice 4 (matching engine). The
+// :Engagement node existed before this without being connected to anything
+// (only :ENGAGED, a client-CA edge with no reference back to which specific
+// engagement(s) it summarizes), which made it impossible to traverse "every
+// *completed* engagement a given CA has for service type X" from the graph
+// at all — a real gap, not a deliberate scope cut; :ENGAGED itself stays,
+// since some queries want "has this pair ever engaged" without caring which
+// specific engagement. This only takes effect for engagement rows synced
+// from here on — existing already-drained :Engagement nodes stay
+// unconnected until their next update re-drains (harmless: MERGE is
+// idempotent, and this project has no real production data yet where a
+// backfill would matter).
 async function upsertEngagementsBatch(items: EngagementSyncItem[]): Promise<void> {
   const rows = items.map((item) => ({
     engagementId: item.payload.engagement_id,
@@ -300,6 +314,8 @@ async function upsertEngagementsBatch(items: EngagementSyncItem[]): Promise<void
            e.status = row.status,
            e.updated_at = datetime()
      MERGE (client)-[:ENGAGED]->(ca)
+     MERGE (client)-[:INITIATED]->(e)
+     MERGE (e)-[:WITH_PROVIDER]->(ca)
      MERGE (st:ServiceType {vertical: row.vertical, slug: row.serviceTypeSlug})
      MERGE (ca)-[:SPECIALIZES_IN]->(st)`,
     { rows }
@@ -318,6 +334,8 @@ async function upsertEngagement(item: EngagementSyncItem): Promise<void> {
            e.status = $status,
            e.updated_at = datetime()
      MERGE (client)-[:ENGAGED]->(ca)
+     MERGE (client)-[:INITIATED]->(e)
+     MERGE (e)-[:WITH_PROVIDER]->(ca)
      MERGE (st:ServiceType {vertical: $vertical, slug: $serviceTypeSlug})
      MERGE (ca)-[:SPECIALIZES_IN]->(st)`,
     {

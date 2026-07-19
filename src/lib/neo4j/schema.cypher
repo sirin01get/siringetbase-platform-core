@@ -36,6 +36,12 @@ CREATE INDEX service_provider_vertical IF NOT EXISTS FOR (sp:ServiceProvider) ON
 
 // --- Relationship shape (created per-record by sync.ts, not here) ----------
 // (:Person)-[:ENGAGED]->(:ServiceProvider)
+// (:Person)-[:INITIATED]->(:Engagement)-[:WITH_PROVIDER]->(:ServiceProvider)
+//   -- added for CA Focus Phase 5's matching engine: lets a query traverse
+//      "which of this ServiceProvider's engagements are completed, in which
+//      service type" — the plain :ENGAGED edge above can't (no reference to
+//      a specific engagement or its status). See
+//      ../../../cafocus/phases/phase-1-core-data-graph-model/sync-contract.md.
 // (:ServiceProvider)-[:SPECIALIZES_IN]->(:ServiceType)
 // (:Person)-[:REFERRED]->(:Person)
 // (:Document)-[:FEEDS]->(:Engagement)   -- Document nodes owned by
