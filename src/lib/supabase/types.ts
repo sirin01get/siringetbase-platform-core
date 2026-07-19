@@ -423,6 +423,60 @@ export interface Database {
         };
         Update: Partial<Database["siringetbase"]["Tables"]["support_error_reports"]["Insert"]>;
       };
+      // Billing rate card — 0008_billing_rate_cards.sql. See
+      // ../../../billing/README.md and src/lib/billing/rate-card.ts.
+      // "Platform charges" — the percentage cut taken at payout.
+      platform_charge_rates: {
+        Row: {
+          id: string;
+          vertical: string;
+          service_type_slug: string | null;
+          rate: number;
+          effective_from: string;
+          effective_to: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          vertical: string;
+          service_type_slug?: string | null;
+          rate: number;
+          effective_from: string;
+          effective_to?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["platform_charge_rates"]["Insert"]>;
+      };
+      // "platform membership fee" — a fixed, recurring platform-access fee.
+      // Modeled and manageable, not yet actively collected — see
+      // src/lib/billing/rate-card.ts's header comment.
+      platform_membership_fees: {
+        Row: {
+          id: string;
+          vertical: string;
+          role: string;
+          amount: number;
+          billing_cycle: "monthly" | "quarterly" | "annual";
+          effective_from: string;
+          effective_to: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          vertical: string;
+          role: string;
+          amount: number;
+          billing_cycle: "monthly" | "quarterly" | "annual";
+          effective_from: string;
+          effective_to?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["platform_membership_fees"]["Insert"]>;
+      };
     };
   };
 }
