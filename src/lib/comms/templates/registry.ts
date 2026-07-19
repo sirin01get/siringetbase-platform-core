@@ -5,7 +5,7 @@
 // touch the hook route or send-notification.ts.
 
 import type { RenderedEmail, TemplateKey } from "../types";
-import { CA_TEMPLATES } from "./ca";
+import { CA_TEMPLATES, PROSPECT_TEMPLATES } from "./ca";
 import { FALLBACK_TEMPLATES } from "./fallback";
 import { INTERNAL_TEMPLATES } from "./support";
 
@@ -18,6 +18,13 @@ const REGISTRY: Record<string, Record<string, Record<string, (data: Record<strin
     // purpose. getTemplate() below falls through to FALLBACK_TEMPLATES for
     // any role with no dedicated entry, rather than a per-role stub file
     // duplicating the same generic copy.
+
+    // Not a real siringetbase.role_profiles.role value — a comms-only
+    // addressing bucket for client-endorsement broadcast recipients, who
+    // don't have any role yet (see ./ca.ts's referralClientEndorsement()
+    // comment). Sent from app/api/referrals/endorse/route.ts with
+    // role: "prospect".
+    prospect: PROSPECT_TEMPLATES,
   },
 };
 
