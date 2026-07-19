@@ -7,6 +7,7 @@
 import type { RenderedEmail, TemplateKey } from "../types";
 import { CA_TEMPLATES } from "./ca";
 import { FALLBACK_TEMPLATES } from "./fallback";
+import { INTERNAL_TEMPLATES } from "./support";
 
 // vertical -> role -> triggerEvent -> renderer
 const REGISTRY: Record<string, Record<string, Record<string, (data: Record<string, unknown>) => RenderedEmail>>> = {
@@ -22,11 +23,22 @@ const REGISTRY: Record<string, Record<string, Record<string, (data: Record<strin
 
 export class TemplateNotFoundError extends Error {}
 
-// Lookup order: exact (vertical, role) entry -> vertical-agnostic fallback.
+// Lookup order: platform-internal entry (./support.ts and any future
+// non-vertical-branded triggerEvent) -> exact (vertical, role) entry ->
+// vertical-agnostic fallback. Internal templates are checked first because
+// their triggerEvent namespace (e.g. "support.*") is never something a
+// vertical is expected to supply its own copy for — see
+// ../../../../support-escalation/README.md's "Where This Lives" note on
+// support.error_report_filed being internal/plain, not vertical-branded.
 // Never falls through silently past a *found-but-missing-triggerEvent* case
 // inside a real vertical/role entry — that's a real gap worth erroring on,
 // distinct from "this role has no templates authored at all yet."
 export function getTemplate(key: TemplateKey): (data: Record<string, unknown>) => RenderedEmail {
+  const internal = INTERNAL_TEMPLATES[key.triggerEvent];
+  if (internal) {
+    return internal;
+  }
+
   const roleTemplates = REGISTRY[key.vertical]?.[key.role];
   const exact = roleTemplates?.[key.triggerEvent];
   if (exact) {

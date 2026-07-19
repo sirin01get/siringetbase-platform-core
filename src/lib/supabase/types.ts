@@ -390,6 +390,39 @@ export interface Database {
         };
         Update: Partial<Database["siringetbase"]["Tables"]["notification_dispatch"]["Insert"]>;
       };
+      // Support Escalation — 0007_support_error_reports.sql. See
+      // ../../../support-escalation/README.md for the full design (help
+      // icon on every error, screenshot + breadcrumb trail, routed to the
+      // support team via comms).
+      support_error_reports: {
+        Row: {
+          id: string;
+          vertical: string;
+          role: string;
+          reporter_role_profile_id: string | null;
+          reporter_session_id: string;
+          error_message: string;
+          error_context: Record<string, unknown>;
+          breadcrumbs: unknown[];
+          screenshot_storage_pointer: string | null;
+          status: "new" | "acknowledged" | "resolved";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          vertical: string;
+          role: string;
+          reporter_role_profile_id?: string | null;
+          reporter_session_id: string;
+          error_message: string;
+          error_context?: Record<string, unknown>;
+          breadcrumbs?: unknown[];
+          screenshot_storage_pointer?: string | null;
+          status?: "new" | "acknowledged" | "resolved";
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["support_error_reports"]["Insert"]>;
+      };
     };
   };
 }

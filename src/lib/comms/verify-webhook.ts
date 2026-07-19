@@ -40,7 +40,7 @@ function base64ToBytes(base64: string): Uint8Array {
 function bytesToBase64(bytes: ArrayBuffer): string {
   let binary = "";
   const view = new Uint8Array(bytes);
-  for (let i = 0; i < view.length; i++) binary += String.fromCharCode(view[i]);
+  for (let i = 0; i < view.length; i++) binary += String.fromCharCode(view[i] ?? 0);
   return btoa(binary);
 }
 
@@ -49,7 +49,10 @@ function bytesToBase64(bytes: ArrayBuffer): string {
 // meaningfully better than `===` on strings of attacker-visible length,
 // and consistent with what a from-scratch Workers implementation can do
 // without an extra dependency.
-function timingSafeEqual(a: string, b: string): boolean {
+// Exported for reuse by ../../../app/api/comms/notify/route.ts's simpler
+// shared-secret header check — same "meaningfully better than `===`"
+// reasoning applies there too, no need for a second copy.
+export function timingSafeEqual(a: string, b: string): boolean {
   if (a.length !== b.length) return false;
   let result = 0;
   for (let i = 0; i < a.length; i++) {

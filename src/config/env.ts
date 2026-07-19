@@ -74,4 +74,19 @@ export const env = {
   // vertical later if each one wants its own subdomain/address instead of
   // sharing this one.
   commsFromEmail: () => process.env.COMMS_FROM_EMAIL ?? "CA Focus <onboarding@email.siringet.com>",
+
+  // Support Escalation — ../../support-escalation/README.md's "Two Entry
+  // Points" (POST /api/comms/notify, the cross-Worker caller for a
+  // vertical's own backend). Shared secret, not the Send Email Hook's
+  // Standard Webhooks signature (there's no Supabase-style signing here —
+  // just a single trusted-caller header), so it's a separate var. Tier 1,
+  // same as every other secret on this page — set identically on both
+  // platform-core (checked here) and each calling vertical (e.g.
+  // cafocus/app, sent as a request header) as a Worker Secret.
+  commsInternalSecret: () => required("COMMS_INTERNAL_SECRET", process.env.COMMS_INTERNAL_SECRET),
+  // Where support.error_report_filed lands — deliberately resolved here,
+  // not accepted from the caller's request body, so a vertical's backend
+  // can never redirect a support notification to an arbitrary address; see
+  // src/lib/comms/templates/support.ts and the notify route's override.
+  supportInboxEmail: () => process.env.SUPPORT_INBOX_EMAIL ?? "support@email.siringet.com",
 };
