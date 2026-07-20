@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import AdminGate from "@/components/admin/AdminGate";
 
 interface ChargeRateRow {
   id: string;
@@ -48,10 +49,19 @@ const statusColor: Record<string, string> = { current: "#0a7", scheduled: "#c80"
 // (src/lib/billing/rate-card.ts's createPlatformChargeRate()/
 // createPlatformMembershipFee()).
 //
-// No auth gate yet — same dev-phase-convenience posture as every other
-// admin route in this app (see app/api/admin/sync-queue/*'s header
-// comments). Protect before this ever manages a real rate.
+// business_admin only (the owner's own naming — see README.md "Access
+// control") — this manages a real rate now, deducted from every CA's
+// payout across every vertical, so every create here is audit-logged with
+// the full rate/fee detail (see the two API routes this page calls).
 export default function BillingAdminPage() {
+  return (
+    <AdminGate allowedRoles={["business_admin"]}>
+      {() => <BillingAdminPageInner />}
+    </AdminGate>
+  );
+}
+
+function BillingAdminPageInner() {
   const [chargeRates, setChargeRates] = useState<ChargeRateRow[]>([]);
   const [membershipFees, setMembershipFees] = useState<MembershipFeeRow[]>([]);
   const [loading, setLoading] = useState(true);

@@ -546,6 +546,43 @@ export interface Database {
         };
         Update: Partial<Database["siringetbase"]["Tables"]["activity_consent"]["Insert"]>;
       };
+      // ../../../supabase/migrations/0010_admin_audit_log.sql — real admin
+      // identity + audit trail, src/lib/admin/{auth,audit}.ts.
+      admin_audit_log: {
+        Row: {
+          id: string;
+          actor_role_profile_id: string | null;
+          actor_user_id: string | null;
+          actor_email: string | null;
+          actor_role: string | null;
+          app: string;
+          action: string;
+          target_type: string | null;
+          target_id: string | null;
+          outcome: "success" | "denied" | "error";
+          detail: Record<string, unknown>;
+          ip_address: string | null;
+          user_agent: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          actor_role_profile_id?: string | null;
+          actor_user_id?: string | null;
+          actor_email?: string | null;
+          actor_role?: string | null;
+          app: string;
+          action: string;
+          target_type?: string | null;
+          target_id?: string | null;
+          outcome: "success" | "denied" | "error";
+          detail?: Record<string, unknown>;
+          ip_address?: string | null;
+          user_agent?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["admin_audit_log"]["Insert"]>;
+      };
     };
   };
 }

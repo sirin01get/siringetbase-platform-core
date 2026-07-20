@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import AdminGate from "@/components/admin/AdminGate";
 
 // Minimal admin view over entity_sync_queue rows that need attention —
 // 'dead_letter' (exhausted automatic retries), legacy 'failed', and
@@ -13,9 +14,9 @@ import { useCallback, useEffect, useState } from "react";
 // ServiceProvider verification, fraud review). It does one thing: let
 // someone see unsynced rows and push them back into the graph.
 //
-// No auth gate yet, same dev-phase-convenience posture as every other
-// unauthenticated route in this app right now — see the API routes'
-// header comments. Protect before anything resembling a public launch.
+// support_admin only (the owner's own naming — see README.md "Access
+// control") — the "other Q [queue] activities" side. Every retry here is
+// audit-logged (see app/api/admin/sync-queue/retry/route.ts).
 
 interface QueueRow {
   id: string;
@@ -37,6 +38,14 @@ interface DrainResult {
 }
 
 export default function SyncQueueAdminPage() {
+  return (
+    <AdminGate allowedRoles={["support_admin"]}>
+      {() => <SyncQueueAdminPageInner />}
+    </AdminGate>
+  );
+}
+
+function SyncQueueAdminPageInner() {
   const [rows, setRows] = useState<QueueRow[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
