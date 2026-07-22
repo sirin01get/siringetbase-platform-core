@@ -48,13 +48,43 @@ export const env = {
     (process.env.PAYMENT_GATEWAY_PROVIDER ?? "razorpay-mock") as
       | "razorpay-mock"
       | "payu-mock"
-      | "cashfree-mock",
+      | "cashfree-mock"
+      | "stripe-mock",
   bankPayoutProvider: () =>
     (process.env.BANK_PAYOUT_PROVIDER ?? "icici-mock") as
       | "icici-mock"
       | "hdfc-mock"
       | "axis-mock"
-      | "sbi-mock",
+      | "sbi-mock"
+      | "ach-mock",
+
+  // Jurisdiction — which country's policy config is active on this deployed
+  // instance (../../jurisdiction/README.md; GLOBAL/01 §A: siringet-in → IN,
+  // siringet-us → US). Default IN because the existing live instance is the
+  // India one; the US instance sets JURISDICTION=US in its own env.
+  jurisdiction: () => (process.env.JURISDICTION ?? "IN") as "IN" | "US",
+
+  // Telephony/SMS — the two new generic comms ports behind which Twilio
+  // (or Telnyx) sits (USVALUE/PMMUSA/01-infrastructure.md Gap 1; port
+  // design in src/lib/comms/telephony/). Provider names are not secret;
+  // real Twilio/Telnyx credentials, once they exist, would be Worker
+  // Secrets read here — never logged.
+  telephonyProvider: () =>
+    (process.env.TELEPHONY_PROVIDER ?? "twilio-mock") as "twilio-mock" | "telnyx-mock" | "twilio",
+  smsProvider: () =>
+    (process.env.SMS_PROVIDER ?? "twilio-mock") as "twilio-mock" | "telnyx-mock" | "twilio",
+
+  // Real Twilio credentials (doc 12 R1; PMMUSA/ops/twilio-setup-checklist.md).
+  // Read lazily ONLY when TELEPHONY_PROVIDER/SMS_PROVIDER = "twilio" — Tier 1
+  // Worker Secrets. Auth token is used solely for inbound webhook signature
+  // validation; API calls authenticate with the API key pair.
+  twilioAccountSid: () => required("TWILIO_ACCOUNT_SID", process.env.TWILIO_ACCOUNT_SID),
+  twilioAuthToken: () => required("TWILIO_AUTH_TOKEN", process.env.TWILIO_AUTH_TOKEN),
+  twilioApiKeySid: () => required("TWILIO_API_KEY_SID", process.env.TWILIO_API_KEY_SID),
+  twilioApiKeySecret: () => required("TWILIO_API_KEY_SECRET", process.env.TWILIO_API_KEY_SECRET),
+  twilioVoiceNumber: () => required("TWILIO_VOICE_NUMBER", process.env.TWILIO_VOICE_NUMBER),
+  // Optional until the A2P campaign is approved (voice-first launch).
+  twilioMessagingServiceSid: () => process.env.TWILIO_MESSAGING_SERVICE_SID || undefined,
 
   // Comms — shared email pipeline (../../comms/README.md). Resend is the
   // first (and, today, only) EmailSenderPort implementation — see
@@ -109,4 +139,11 @@ export const env = {
   // never a browser. MUST match the calling vertical's own
   // PAYMENTS_INTERNAL_SECRET exactly.
   paymentsInternalSecret: () => required("PAYMENTS_INTERNAL_SECRET", process.env.PAYMENTS_INTERNAL_SECRET),
+
+  // Global directory ingest (GLOBAL/01 §B) —
+  // app/api/global-directory/resolve/route.ts's shared-secret header. Same
+  // separate-secret-per-surface posture as the other internal secrets;
+  // callers are regional instances' outbox consumers, never browsers.
+  globalDirectoryInternalSecret: () =>
+    required("GLOBAL_DIRECTORY_INTERNAL_SECRET", process.env.GLOBAL_DIRECTORY_INTERNAL_SECRET),
 };

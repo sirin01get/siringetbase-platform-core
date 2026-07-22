@@ -10,7 +10,10 @@ interface ReleaseBody {
   commission_rate?: number;
   payout_account_id?: string;
   account_number_last4?: string;
+  // Exactly one of the two rails (src/lib/payments/types.ts
+  // PayoutDestination): ifsc for in_ifsc, routing_number for us_ach.
   ifsc?: string;
+  routing_number?: string;
   account_holder_name?: string;
 }
 
@@ -42,6 +45,7 @@ export async function POST(req: NextRequest) {
     payout_account_id,
     account_number_last4,
     ifsc,
+    routing_number,
     account_holder_name,
   } = body;
 
@@ -52,14 +56,15 @@ export async function POST(req: NextRequest) {
     commission_rate === undefined ||
     !payout_account_id ||
     !account_number_last4 ||
-    !ifsc ||
+    (!ifsc && !routing_number) ||
+    (ifsc && routing_number) ||
     !account_holder_name
   ) {
     return NextResponse.json(
       {
         status: "error",
         message:
-          "Expected { escrow_hold_id, vertical, service_provider_role_profile_id, commission_rate, payout_account_id, account_number_last4, ifsc, account_holder_name }.",
+          "Expected { escrow_hold_id, vertical, service_provider_role_profile_id, commission_rate, payout_account_id, account_number_last4, ifsc XOR routing_number, account_holder_name }.",
       },
       { status: 400 }
     );
@@ -73,7 +78,9 @@ export async function POST(req: NextRequest) {
       commissionRate: commission_rate,
       payoutAccountId: payout_account_id,
       accountNumberLast4: account_number_last4,
-      ifsc,
+      destination: ifsc
+        ? { accountType: "in_ifsc", ifsc }
+        : { accountType: "us_ach", routingNumber: routing_number! },
       accountHolderName: account_holder_name,
     });
 

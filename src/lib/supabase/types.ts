@@ -125,7 +125,11 @@ export interface Database {
           account_holder_name: string;
           account_number_last4: string;
           bank_name: string;
-          ifsc: string;
+          // Rail discriminator (0011_payout_account_types.sql): in_ifsc
+          // rows carry ifsc, us_ach rows carry routing_number.
+          account_type: "in_ifsc" | "us_ach";
+          ifsc: string | null;
+          routing_number: string | null;
           verified: boolean;
           created_at: string;
         };
@@ -135,7 +139,9 @@ export interface Database {
           account_holder_name: string;
           account_number_last4: string;
           bank_name: string;
-          ifsc: string;
+          account_type?: "in_ifsc" | "us_ach";
+          ifsc?: string | null;
+          routing_number?: string | null;
           verified?: boolean;
           created_at?: string;
         };
@@ -582,6 +588,57 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["admin_audit_log"]["Insert"]>;
+      };
+      // Global identity directory (0012_global_directory.sql) — present only
+      // on the siringet-global instance's project (GLOBAL/01 §B).
+      global_directory: {
+        Row: {
+          global_person_id: string;
+          email_hash: string;
+          home_region: "us" | "in";
+          created_at: string;
+        };
+        Insert: {
+          global_person_id?: string;
+          email_hash: string;
+          home_region: "us" | "in";
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["global_directory"]["Insert"]>;
+      };
+      global_regional_profiles: {
+        Row: {
+          global_person_id: string;
+          region: "us" | "in" | "global";
+          local_user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          global_person_id: string;
+          region: "us" | "in" | "global";
+          local_user_id: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["global_regional_profiles"]["Insert"]>;
+      };
+      global_roles: {
+        Row: {
+          global_person_id: string;
+          vertical: string;
+          role: string;
+          status: "active" | "suspended" | "left";
+          consent_ref: string;
+          created_at: string;
+        };
+        Insert: {
+          global_person_id: string;
+          vertical: string;
+          role: string;
+          status?: "active" | "suspended" | "left";
+          consent_ref: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["global_roles"]["Insert"]>;
       };
     };
   };

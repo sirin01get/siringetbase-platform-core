@@ -42,12 +42,23 @@ export interface PaymentGatewayPort {
   refund(request: RefundRequest): Promise<RefundResult>;
 }
 
+// Payout destination — discriminated by rail, per country-extension/usa
+// ("payout_accounts needs a US bank account model (routing number +
+// account number) instead of IFSC") and USVALUE/PMMUSA/03 §B3's
+// payout_accounts account-type discriminator. Adding a rail (SEPA
+// IBAN/BIC, AU BSB, …) is a new union member + migration, never a change
+// to callers that don't use it. Mirrors supabase migration
+// 0011_payout_account_types.sql's account_type column.
+export type PayoutDestination =
+  | { accountType: "in_ifsc"; ifsc: string }
+  | { accountType: "us_ach"; routingNumber: string };
+
 export interface PayoutRequest {
   amount: number;
   currency: string;
   payoutAccountId: string;
   accountNumberLast4: string;
-  ifsc: string;
+  destination: PayoutDestination;
   accountHolderName: string;
   reference: string; // mocks look for FORCE_FAIL here
 }

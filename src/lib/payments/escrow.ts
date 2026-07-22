@@ -1,5 +1,6 @@
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { getPaymentGateway, getBankPayout } from "./registry";
+import type { PayoutDestination } from "./types";
 
 // hold / release / reverse — the three primitives ../../payments/README.md
 // specifies. Every vertical's marketplace module calls these with its own
@@ -14,6 +15,10 @@ export interface HoldParams {
   amount: number;
   roleProfileId: string; // the payer
   description: string;
+  // ISO 4217; defaults to INR to preserve existing callers. US instance
+  // callers pass "USD" — sourced from the Jurisdiction subsystem
+  // (src/lib/jurisdiction/), never hardcoded in a vertical.
+  currency?: string;
 }
 
 export interface HoldResult {
@@ -30,7 +35,7 @@ export async function hold(params: HoldParams): Promise<HoldResult> {
 
   const chargeResult = await gateway.charge({
     amount: params.amount,
-    currency: "INR",
+    currency: params.currency ?? "INR",
     roleProfileId: params.roleProfileId,
     vertical: params.vertical,
     engagementId: params.engagementId,
@@ -94,8 +99,12 @@ export interface ReleaseParams {
   commissionRate: number; // e.g. 0.10 for 10% — caller-supplied, see file header
   payoutAccountId: string;
   accountNumberLast4: string;
-  ifsc: string;
+  // Rail-discriminated destination (types.ts PayoutDestination) — IFSC row
+  // or routing+account row, matching payout_accounts.account_type
+  // (migration 0011).
+  destination: PayoutDestination;
   accountHolderName: string;
+  currency?: string; // defaults to INR, see HoldParams
 }
 
 export interface ReleaseResult {
@@ -126,10 +135,10 @@ export async function release(params: ReleaseParams): Promise<ReleaseResult> {
 
   const payoutResult = await bankPayout.disburse({
     amount: netPayoutAmount,
-    currency: "INR",
+    currency: params.currency ?? "INR",
     payoutAccountId: params.payoutAccountId,
     accountNumberLast4: params.accountNumberLast4,
-    ifsc: params.ifsc,
+    destination: params.destination,
     accountHolderName: params.accountHolderName,
     reference: escrowHold.id,
   });

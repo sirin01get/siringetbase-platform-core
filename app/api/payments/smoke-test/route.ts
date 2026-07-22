@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     currency: "INR",
     payoutAccountId: "smoke-test",
     accountNumberLast4: "1234",
-    ifsc: "SMOK0000001",
+    destination: { accountType: "in_ifsc", ifsc: "SMOK0000001" },
     accountHolderName: "Smoke Test",
     reference: `smoke-test ${tag}`.trim(),
   });

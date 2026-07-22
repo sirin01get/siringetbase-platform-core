@@ -28,6 +28,52 @@ jobs:
 
       - run: npm run typecheck
 
+      # Unit + contract lane (GLOBAL/05 §A/§C): every port's contract suite
+      # runs against every adapter — mock and, later, real. A real adapter
+      # that hasn't passed the suite its mock passes cannot merge.
+      - run: npm test
+
+  # RLS lane (GLOBAL/05 §A): migrations applied to a clean local Postgres on
+  # every cycle — catches broken SQL and missing policies before staging.
+  # Policy-assertion tests (pgTAP: firm A cannot read firm B, vertical
+  # scoping, deny-all defaults) land in supabase/tests/ as they're written.
+  rls-migrations:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - run: supabase init --force || true
+
+      - name: Apply all migrations to a clean local database
+        run: supabase db start && supabase db reset --local
+
+      - name: Run pgTAP RLS policy tests (supabase/tests/)
+        run: supabase test db
+
+  # Capability lane (GLOBAL/05 §A): API-level forbidden-action matrices —
+  # US-user-never-sees-India-role assertions, kid-token containment (before
+  # Kids Tuitions can ever deploy), region-scope tokens. Wired as a named
+  # lane from commit #1 so the gate exists before the features do; suites
+  # register under src/**/__tests__/capability/.
+  capability-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Run capability suites (empty is a pass, missing lane is not)
+        run: npx vitest run --dir src --testNamePattern "capability:" --passWithNoTests
+
       - run: npm run build
         env:
           # Placeholder values so the build doesn't fail on missing env vars
