@@ -1,3 +1,15 @@
+-- Numbered 0015, not 0013 — this project's Supabase database is shared
+-- across cafocus/app, this repo, and PMMUSA, each with its own
+-- independently-numbered supabase/migrations folder. cafocus/app's
+-- migrations already claimed remote versions 0013 (client_requirements)
+-- and 0014 (client_invite_offers) on this shared database, so this repo's
+-- own next migration has to skip past both to avoid colliding — see
+-- this repo's own README for the "supabase migration repair" reconciliation
+-- this required. This repo's own migration immediately before this one is
+-- 0012_global_directory.sql — nothing called 0013 or 0014 has ever
+-- existed in this repo's own migrations folder; those numbers belong
+-- entirely to cafocus/app's sequence on the shared database.
+--
 -- Document review workflow — adds the one column missing for a human
 -- reviewer to confirm/correct an AI extraction, per the owner's request:
 -- "add additional screen for business admin to search and review the
