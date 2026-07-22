@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createSupabaseServerClient, createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { writeAuditLog } from "./audit";
+import { resolveAdminRoleConflict } from "./role-conflict-resolver";
 
 // Real admin identity for this app's own /admin/* pages (billing,
 // sync-queue) — mirrors cafocus/app's src/lib/admin/auth.ts exactly (same
@@ -12,6 +13,14 @@ import { writeAuditLog } from "./audit";
 // charges) and "support admin" (cafocus/app's disputes, and this app's
 // /admin/sync-queue) — the owner's own naming. No self-registration — see
 // README.md "Access control".
+//
+// One account, more than one active role: see cafocus/app's identical
+// header comment on this same function. Granting still only happens over
+// in cafocus/app (src/lib/admin/staff.ts, scripts/grant-admin.mjs) — this
+// app only ever reads role_profiles, never writes an admin grant — but
+// since it's the same shared table, a dual-role account is dual-role here
+// too. See ../../../../admin/README.md and
+// ./role-conflict-resolver.ts.
 export type AdminRole = "business_admin" | "support_admin";
 
 export interface AdminActor {
@@ -19,9 +28,14 @@ export interface AdminActor {
   userId: string;
   email: string | null;
   role: AdminRole;
+  /** Every OTHER active admin role this account also holds, if any. */
+  otherActiveRoles: AdminRole[];
 }
 
-export async function getAdminRoleProfile(userId: string, allowedRoles: AdminRole[]): Promise<{ id: string; role: AdminRole } | null> {
+export async function getAdminRoleProfile(
+  userId: string,
+  allowedRoles: AdminRole[]
+): Promise<{ id: string; role: AdminRole; hadConflict: boolean; otherActiveRoles: AdminRole[] } | null> {
   const siringetbase = createSupabaseServiceRoleClient();
   const { data } = await siringetbase
     .from("role_profiles")
@@ -29,10 +43,19 @@ export async function getAdminRoleProfile(userId: string, allowedRoles: AdminRol
     .eq("user_id", userId)
     .eq("vertical", "siringetbase")
     .in("role", allowedRoles)
-    .eq("status", "active")
-    .maybeSingle();
+    .eq("status", "active");
 
-  return data ? { id: data.id, role: data.role as AdminRole } : null;
+  const candidates = (data ?? []).map((row) => ({ id: row.id as string, role: row.role as AdminRole }));
+  if (candidates.length === 0) return null;
+
+  const { resolved, hadConflict, otherRoles } = resolveAdminRoleConflict({
+    userId,
+    email: null,
+    action: "",
+    candidates,
+  });
+
+  return { id: resolved.id, role: resolved.role, hadConflict, otherActiveRoles: otherRoles };
 }
 
 // Session + role check for every /api/admin/* route in this app, in one
@@ -79,8 +102,23 @@ export async function requireAdmin(
     };
   }
 
-  return {
-    ok: true,
-    actor: { roleProfileId: admin.id, userId: user.id, email: user.email ?? null, role: admin.role },
+  const actor: AdminActor = {
+    roleProfileId: admin.id,
+    userId: user.id,
+    email: user.email ?? null,
+    role: admin.role,
+    otherActiveRoles: admin.otherActiveRoles,
   };
+
+  if (admin.hadConflict) {
+    await writeAuditLog({
+      actor,
+      action: "role_conflict.auto_approved",
+      outcome: "success",
+      detail: { for_action: action, resolved_role: admin.role, other_active_roles: admin.otherActiveRoles, allowed_roles: allowedRoles },
+      request,
+    });
+  }
+
+  return { ok: true, actor };
 }

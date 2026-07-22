@@ -7,7 +7,11 @@ export type AdminRole = "business_admin" | "support_admin";
 
 interface WhoAmI {
   email: string | null;
+  /** "Primary" role for display — cosmetic only, see /api/admin/whoami's header comment. */
   role: AdminRole;
+  otherActiveRoles: AdminRole[];
+  /** Full active role set — this is what authorization checks below use. */
+  roles: AdminRole[];
 }
 
 const ROLE_LABEL: Record<AdminRole, string> = {
@@ -45,15 +49,18 @@ export default function AdminGate({
         return;
       }
       const body = (await res.json().catch(() => ({}))) as { status: string; admin?: WhoAmI };
-      if (body.status !== "ok" || !body.admin) {
+      const admin = body.admin;
+      if (body.status !== "ok" || !admin) {
         setState({ status: "signed_out" });
         return;
       }
-      if (allowedRoles && !allowedRoles.includes(body.admin.role)) {
-        setState({ status: "wrong_role", admin: body.admin });
+      // Intersect against the FULL role set, not just the resolved
+      // "primary" role — see /api/admin/whoami's header comment.
+      if (allowedRoles && !allowedRoles.some((r) => admin.roles.includes(r))) {
+        setState({ status: "wrong_role", admin });
         return;
       }
-      setState({ status: "ok", admin: body.admin });
+      setState({ status: "ok", admin });
     })();
     return () => {
       cancelled = true;
@@ -109,6 +116,9 @@ export default function AdminGate({
       >
         <span>
           Signed in as <strong style={{ color: "#fff" }}>{state.admin.email ?? "—"}</strong> · {ROLE_LABEL[state.admin.role]}
+          {state.admin.otherActiveRoles.length > 0 && (
+            <span style={{ color: "#9ca3af" }}> (also: {state.admin.otherActiveRoles.map((r) => ROLE_LABEL[r]).join(", ")})</span>
+          )}
         </span>
         <button
           type="button"
