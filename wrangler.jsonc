@@ -14,13 +14,20 @@
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
 	},
-	// Drains the Postgres -> Neo4j entity_sync_queue outbox every minute —
-	// see worker.ts's scheduled() handler and
-	// siringetbase/entity-graph/data-sync-architecture.md §4, MVP item #1.
-	// Every-1-minute is a reasonable starting cadence for Phase 0 volume;
-	// revisit if the queue's write volume ever makes this too chatty.
+	// Two cron entries, told apart in worker.ts's scheduled() handler by
+	// event.cron:
+	//   "*/1 * * * *" — drains the Postgres -> Neo4j entity_sync_queue
+	//     outbox every minute (siringetbase/entity-graph/data-sync-architecture.md
+	//     §4, MVP item #1). Every-1-minute is a reasonable starting cadence
+	//     for Phase 0 volume; revisit if the queue's write volume ever makes
+	//     this too chatty.
+	//   "0 3 * * 0" — weekly, Sunday 03:00 UTC (off-peak): empties
+	//     cafocus/app's admin_audit_log "hidden bin"
+	//     (src/lib/admin/audit-log-purge.ts) — the owner's request that a
+	//     deleted log entry go to a bin first, then get trashed out on a
+	//     weekly schedule, not deleted for real immediately.
 	"triggers": {
-		"crons": ["*/1 * * * *"]
+		"crons": ["*/1 * * * *", "0 3 * * 0"]
 	},
 	// Workers AI binding — shared Model Gateway provider for Document
 	// Intelligence and Knowledge RAG (see ../document-intelligence/README.md,

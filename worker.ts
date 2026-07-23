@@ -20,19 +20,30 @@
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
 import handler from "./.open-next/worker.js";
 import { drainEntitySyncQueue } from "./src/lib/entity-graph/sync";
+import { purgeDeletedAuditLogEntries } from "./src/lib/admin/audit-log-purge";
 
 export default {
   fetch: handler.fetch,
 
-  // Fires on the schedule configured in wrangler.jsonc's triggers.crons.
-  // Drains the Postgres -> Neo4j sync outbox (see
-  // siringetbase/entity-graph/data-sync-architecture.md §4, MVP item #1) —
-  // this is what turns sync from "only runs when a human remembers to POST
-  // /api/entity-graph/sync" into an actual dependable background job.
-  // ctx.waitUntil keeps the Worker alive until the drain finishes, since
-  // scheduled handlers are otherwise torn down as soon as this function
-  // returns.
-  async scheduled(_event, _env, ctx) {
+  // Fires on either schedule configured in wrangler.jsonc's triggers.crons
+  // — event.cron tells the two apart, since they run completely different
+  // jobs on completely different cadences:
+  //   "*/1 * * * *" — drains the Postgres -> Neo4j sync outbox (see
+  //     siringetbase/entity-graph/data-sync-architecture.md §4, MVP item
+  //     #1) — this is what turns sync from "only runs when a human
+  //     remembers to POST /api/entity-graph/sync" into an actual
+  //     dependable background job.
+  //   "0 3 * * 0" — weekly purge of cafocus/app's admin_audit_log hidden
+  //     bin (audit-log-purge.ts's header comment has the full "why here,
+  //     not cafocus/app" reasoning).
+  // ctx.waitUntil keeps the Worker alive until whichever job finishes,
+  // since scheduled handlers are otherwise torn down as soon as this
+  // function returns.
+  async scheduled(event, _env, ctx) {
+    if (event.cron === "0 3 * * 0") {
+      ctx.waitUntil(purgeDeletedAuditLogEntries());
+      return;
+    }
     ctx.waitUntil(drainEntitySyncQueue());
   },
 };

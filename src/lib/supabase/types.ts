@@ -564,6 +564,8 @@ export interface Database {
           ip_address: string | null;
           user_agent: string | null;
           created_at: string;
+          deleted_at: string | null;
+          deleted_by_role_profile_id: string | null;
         };
         Insert: {
           id?: string;
@@ -580,6 +582,8 @@ export interface Database {
           ip_address?: string | null;
           user_agent?: string | null;
           created_at?: string;
+          deleted_at?: string | null;
+          deleted_by_role_profile_id?: string | null;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["admin_audit_log"]["Insert"]>;
       };
