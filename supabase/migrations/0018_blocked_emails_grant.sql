@@ -1,0 +1,11 @@
+-- Fixes a gap in 0016_blocked_emails.sql: that migration enabled RLS with
+-- no policies and a comment claiming "service role bypasses" — true for
+-- row-level security, but RLS bypass doesn't imply a table-level GRANT.
+-- 0010_admin_audit_log.sql got this right (ends with an explicit
+-- `grant all ... to service_role`); 0016 referenced that same pattern in
+-- its own comment but never actually included the grant statement, so
+-- every call from cafocus/app's src/lib/admin/signups.ts
+-- (createSiringetbaseServiceRoleClient(), the service-role key) failed
+-- with "permission denied for table blocked_emails" even after the table
+-- itself became visible in PostgREST's schema cache.
+grant all on siringetbase.blocked_emails to service_role;
