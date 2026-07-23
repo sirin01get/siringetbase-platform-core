@@ -21,6 +21,7 @@
 import handler from "./.open-next/worker.js";
 import { drainEntitySyncQueue } from "./src/lib/entity-graph/sync";
 import { purgeDeletedAuditLogEntries } from "./src/lib/admin/audit-log-purge";
+import { triggerCafocusSubscriptionBillingCycle } from "./src/lib/billing/subscription-billing-trigger";
 
 export default {
   fetch: handler.fetch,
@@ -36,12 +37,21 @@ export default {
   //   "0 3 * * 0" — weekly purge of cafocus/app's admin_audit_log hidden
   //     bin (audit-log-purge.ts's header comment has the full "why here,
   //     not cafocus/app" reasoning).
+  //   "0 5 * * *" — daily trigger for cafocus/app's recurring
+  //     module-subscription billing cycle
+  //     (subscription-billing-trigger.ts's header comment has the full
+  //     "why an outbound call, not a direct query" reasoning — the reverse
+  //     of the other two, which both act on data this Worker already owns).
   // ctx.waitUntil keeps the Worker alive until whichever job finishes,
   // since scheduled handlers are otherwise torn down as soon as this
   // function returns.
   async scheduled(event, _env, ctx) {
     if (event.cron === "0 3 * * 0") {
       ctx.waitUntil(purgeDeletedAuditLogEntries());
+      return;
+    }
+    if (event.cron === "0 5 * * *") {
+      ctx.waitUntil(triggerCafocusSubscriptionBillingCycle());
       return;
     }
     ctx.waitUntil(drainEntitySyncQueue());

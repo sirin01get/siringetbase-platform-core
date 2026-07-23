@@ -7,6 +7,9 @@ import type {
   RefundResult,
   PayoutRequest,
   PayoutResult,
+  MandateRequest,
+  MandateResult,
+  MandateChargeRequest,
 } from "./types";
 
 // Every gateway/bank mock is built from these two factories, so they're
@@ -74,6 +77,66 @@ export function createMockGateway(providerName: string): PaymentGatewayPort {
         providerTransactionId,
         status: "completed",
         rawResponse: { provider: providerName, simulated: true, outcome: "refunded", amount: request.amount },
+      };
+    },
+
+    // Recurring-billing extension — see ./types.ts's header comment on
+    // MandateRequest/MandateChargeRequest for why these are separate from
+    // charge()/refund() above. Same FORCE_FAIL/FORCE_PENDING convention,
+    // read from `description` on both calls.
+    async createMandate(request: MandateRequest): Promise<MandateResult> {
+      const mandateReference = `mandate_${providerName}_${crypto.randomUUID()}`;
+
+      if (request.description.includes("FORCE_FAIL")) {
+        return {
+          success: false,
+          mandateReference,
+          status: "failed",
+          failureReason: "Simulated mandate setup decline (FORCE_FAIL present in description)",
+          rawResponse: { provider: providerName, simulated: true, outcome: "mandate_declined" },
+        };
+      }
+      if (request.description.includes("FORCE_PENDING")) {
+        return {
+          success: false,
+          mandateReference,
+          status: "pending",
+          rawResponse: { provider: providerName, simulated: true, outcome: "mandate_pending" },
+        };
+      }
+      return {
+        success: true,
+        mandateReference,
+        status: "active",
+        rawResponse: { provider: providerName, simulated: true, outcome: "mandate_active" },
+      };
+    },
+
+    async chargeMandate(request: MandateChargeRequest): Promise<ChargeResult> {
+      const providerTransactionId = simulatedTransactionId(providerName);
+
+      if (request.description.includes("FORCE_FAIL")) {
+        return {
+          success: false,
+          providerTransactionId,
+          status: "failed",
+          failureReason: "Simulated mandate draw decline (FORCE_FAIL present in description)",
+          rawResponse: { provider: providerName, simulated: true, outcome: "mandate_charge_declined" },
+        };
+      }
+      if (request.description.includes("FORCE_PENDING")) {
+        return {
+          success: false,
+          providerTransactionId,
+          status: "pending",
+          rawResponse: { provider: providerName, simulated: true, outcome: "mandate_charge_pending" },
+        };
+      }
+      return {
+        success: true,
+        providerTransactionId,
+        status: "completed",
+        rawResponse: { provider: providerName, simulated: true, outcome: "mandate_charge_success", amount: request.amount },
       };
     },
   };

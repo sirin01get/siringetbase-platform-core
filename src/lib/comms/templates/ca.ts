@@ -284,11 +284,72 @@ function referralClientEndorsement(data: Record<string, unknown>): RenderedEmail
   };
 }
 
+// Recurring module-subscription billing, "manual_monthly" payment mode —
+// there's no mandate to auto-charge, so each period's due amount needs a
+// nudge to the CA rather than silently retrying forever. Sent by
+// cafocus/app's src/lib/subscriptions/subscription-billing.ts (the internal
+// billing-cycle route platform-core's daily cron triggers) once per pending
+// invoice.
+function subscriptionPaymentDue(data: Record<string, unknown>): RenderedEmail {
+  const serviceDisplayName = String(data.serviceDisplayName ?? "your subscription");
+  const amount = String(data.amount ?? "");
+  const payUrl = String(data.payUrl ?? "");
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:${BRAND};">
+          CA Focus
+        </p>
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
+          ${escapeHtml(serviceDisplayName)} payment due
+        </h1>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+          Your monthly payment of <strong style="color:#0f172a;">₹${escapeHtml(amount)}</strong> for
+          ${escapeHtml(serviceDisplayName)} is due. You're on manual monthly billing, so this doesn't
+          get charged automatically — pay below to keep it active.
+        </p>
+        ${
+          payUrl
+            ? `<table role="presentation" cellpadding="0" cellspacing="0">
+                 <tr>
+                   <td style="border-radius:10px;background:${BRAND};">
+                     <a href="${escapeHtml(payUrl)}"
+                        style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
+                       Pay now
+                     </a>
+                   </td>
+                 </tr>
+               </table>`
+            : ""
+        }
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
+          Prefer not to do this every month? Switch to auto-renew from your subscription settings and
+          this gets collected automatically going forward.
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:20px 32px;background:#fdf2f8;border-top:1px solid #fce7f3;">
+        <p style="margin:0;font-size:12px;color:#9d174d;">
+          Precision work, valued precisely — CA Focus, part of the Siringet platform.
+        </p>
+      </td>
+    </tr>`;
+
+  return {
+    subject: `${serviceDisplayName} payment due — ₹${amount}`,
+    html: emailShell({ previewText: `${serviceDisplayName} payment of ₹${amount} is due`, bodyHtml }),
+    text: `${serviceDisplayName} payment due: ₹${amount}.\n\nYou're on manual monthly billing, so this isn't charged automatically.${payUrl ? `\n\nPay now: ${payUrl}` : ""}\n\nPrefer automatic collection? Switch to auto-renew from your subscription settings.`,
+  };
+}
+
 export const CA_TEMPLATES: Record<string, TemplateRenderer> = {
   "auth.magic_link": authMagicLink,
   "referral.marketer_invite": referralMarketerInvite,
   "verification.approved": verificationApproved,
   "verification.rejected": verificationRejected,
+  "subscription.payment_due": subscriptionPaymentDue,
 };
 
 // Same copy, addressed to a non-CA recipient — see registry.ts's "prospect"

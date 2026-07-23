@@ -26,6 +26,21 @@ interface MembershipFeeRow {
   created_at: string;
 }
 
+interface SubscriptionPlanRow {
+  id: string;
+  vertical: string;
+  service_type_slug: string;
+  tier: string;
+  amount: number;
+  included_usage_quota: number | null;
+  overage_unit_rate: number | null;
+  usage_unit_label: string | null;
+  effective_from: string;
+  effective_to: string | null;
+  note: string | null;
+  created_at: string;
+}
+
 // Status computed client-side, purely for display — the API returns raw
 // history, "which one is live right now" is a presentation question, not a
 // query the backend needs to answer specially.
@@ -64,9 +79,21 @@ export default function BillingAdminPage() {
 function BillingAdminPageInner() {
   const [chargeRates, setChargeRates] = useState<ChargeRateRow[]>([]);
   const [membershipFees, setMembershipFees] = useState<MembershipFeeRow[]>([]);
+  const [subscriptionPlans, setSubscriptionPlans] = useState<SubscriptionPlanRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
+
+  const [planVertical, setPlanVertical] = useState("cafocus");
+  const [planServiceType, setPlanServiceType] = useState("");
+  const [planTier, setPlanTier] = useState("basic");
+  const [planAmount, setPlanAmount] = useState("");
+  const [planQuota, setPlanQuota] = useState("");
+  const [planOverageRate, setPlanOverageRate] = useState("");
+  const [planUsageUnitLabel, setPlanUsageUnitLabel] = useState("");
+  const [planEffectiveFrom, setPlanEffectiveFrom] = useState("");
+  const [planNote, setPlanNote] = useState("");
+  const [savingPlan, setSavingPlan] = useState(false);
 
   const [rateVertical, setRateVertical] = useState("cafocus");
   const [rateServiceType, setRateServiceType] = useState("");
@@ -86,9 +113,10 @@ function BillingAdminPageInner() {
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
-    const [rateRes, feeRes] = await Promise.all([
+    const [rateRes, feeRes, planRes] = await Promise.all([
       fetch("/api/admin/billing/platform-charge-rates"),
       fetch("/api/admin/billing/platform-membership-fees"),
+      fetch("/api/admin/billing/module-subscription-plans"),
     ]);
     const rateBody = (await rateRes.json().catch(() => ({}))) as {
       status: string;
@@ -100,11 +128,17 @@ function BillingAdminPageInner() {
       rows?: MembershipFeeRow[];
       message?: string;
     };
+    const planBody = (await planRes.json().catch(() => ({}))) as {
+      status: string;
+      rows?: SubscriptionPlanRow[];
+      message?: string;
+    };
     if (rateBody.status !== "ok") {
       setError(rateBody.message ?? "Failed to load platform charge rates.");
     }
     setChargeRates(rateBody.rows ?? []);
     setMembershipFees(feeBody.rows ?? []);
+    setSubscriptionPlans(planBody.rows ?? []);
     setLoading(false);
   }, []);
 
@@ -167,6 +201,42 @@ function BillingAdminPageInner() {
       setFeeNote("");
     }
     setSavingFee(false);
+    await load();
+  }
+
+  async function createPlan(e: FormEvent) {
+    e.preventDefault();
+    setSavingPlan(true);
+    setError(null);
+    setInfo(null);
+
+    const res = await fetch("/api/admin/billing/module-subscription-plans", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        vertical: planVertical,
+        service_type_slug: planServiceType,
+        tier: planTier,
+        amount: Number(planAmount),
+        included_usage_quota: planQuota ? Number(planQuota) : null,
+        overage_unit_rate: planOverageRate ? Number(planOverageRate) : null,
+        usage_unit_label: planUsageUnitLabel || null,
+        effective_from: planEffectiveFrom || new Date().toISOString(),
+        note: planNote,
+      }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { status: string; message?: string };
+    if (body.status !== "ok") {
+      setError(body.message ?? "Could not save plan.");
+    } else {
+      setInfo("Module subscription plan saved.");
+      setPlanAmount("");
+      setPlanQuota("");
+      setPlanOverageRate("");
+      setPlanUsageUnitLabel("");
+      setPlanNote("");
+    }
+    setSavingPlan(false);
     await load();
   }
 
@@ -340,6 +410,120 @@ function BillingAdminPageInner() {
                   <td style={cellStyle}>{f.effective_to ? new Date(f.effective_to).toLocaleString() : "open"}</td>
                   <td style={{ ...cellStyle, color: statusColor[status], fontWeight: 600 }}>{status}</td>
                   <td style={cellStyle}>{f.note ?? "—"}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+
+      <h2 style={{ marginTop: "2.5rem" }}>Module subscription plans</h2>
+      <p>
+        Recurring, per-module tiers for subscription-monetized service types (e.g. cafocus&apos;s Client management /
+        Document storage / Automated reminders — see that vertical&apos;s <code>service_types.monetization_model</code>).
+        A CA subscribing to a released module picks one of these tiers; <code>included_usage_quota</code> +{" "}
+        <code>overage_unit_rate</code> are optional and only matter for a module that meters usage — leave both blank
+        for a flat monthly fee.
+      </p>
+      <form onSubmit={(e) => void createPlan(e)} style={formStyle}>
+        <label>
+          Vertical
+          <input value={planVertical} onChange={(e) => setPlanVertical(e.target.value)} style={inputStyle} />
+        </label>
+        <label>
+          Service type
+          <input
+            value={planServiceType}
+            onChange={(e) => setPlanServiceType(e.target.value)}
+            placeholder="e.g. document-storage"
+            style={inputStyle}
+          />
+        </label>
+        <label>
+          Tier
+          <input value={planTier} onChange={(e) => setPlanTier(e.target.value)} placeholder="e.g. basic" style={inputStyle} />
+        </label>
+        <label>
+          Amount / month (INR)
+          <input
+            type="number"
+            min="0"
+            step="0.01"
+            value={planAmount}
+            onChange={(e) => setPlanAmount(e.target.value)}
+            style={inputStyle}
+          />
+        </label>
+        <label>
+          Included usage quota <span style={{ fontWeight: 400, color: "#666" }}>(optional)</span>
+          <input type="number" min="0" value={planQuota} onChange={(e) => setPlanQuota(e.target.value)} style={inputStyle} />
+        </label>
+        <label>
+          Overage rate/unit <span style={{ fontWeight: 400, color: "#666" }}>(optional, cost-plus above quota)</span>
+          <input
+            type="number"
+            min="0"
+            step="0.0001"
+            value={planOverageRate}
+            onChange={(e) => setPlanOverageRate(e.target.value)}
+            style={inputStyle}
+          />
+        </label>
+        <label>
+          Usage unit label <span style={{ fontWeight: 400, color: "#666" }}>(optional, e.g. &quot;client&quot;)</span>
+          <input value={planUsageUnitLabel} onChange={(e) => setPlanUsageUnitLabel(e.target.value)} style={inputStyle} />
+        </label>
+        <label>
+          Effective from <span style={{ fontWeight: 400, color: "#666" }}>(blank = now)</span>
+          <input
+            type="datetime-local"
+            value={planEffectiveFrom}
+            onChange={(e) => setPlanEffectiveFrom(e.target.value)}
+            style={inputStyle}
+          />
+        </label>
+        <label>
+          Note
+          <input value={planNote} onChange={(e) => setPlanNote(e.target.value)} style={inputStyle} />
+        </label>
+        <button type="submit" disabled={savingPlan}>
+          {savingPlan ? "Saving…" : "Schedule plan"}
+        </button>
+      </form>
+
+      {!loading && subscriptionPlans.length === 0 ? (
+        <p>No module subscription plans set yet — nothing is releasable for CAs to subscribe to until one exists.</p>
+      ) : (
+        <table style={tableStyle}>
+          <thead>
+            <tr>
+              <th style={cellStyle}>Vertical</th>
+              <th style={cellStyle}>Service type</th>
+              <th style={cellStyle}>Tier</th>
+              <th style={cellStyle}>Amount/mo</th>
+              <th style={cellStyle}>Quota</th>
+              <th style={cellStyle}>Overage rate</th>
+              <th style={cellStyle}>Effective from</th>
+              <th style={cellStyle}>Effective to</th>
+              <th style={cellStyle}>Status</th>
+              <th style={cellStyle}>Note</th>
+            </tr>
+          </thead>
+          <tbody>
+            {subscriptionPlans.map((p) => {
+              const status = rowStatus(p.effective_from, p.effective_to);
+              return (
+                <tr key={p.id}>
+                  <td style={cellStyle}>{p.vertical}</td>
+                  <td style={cellStyle}>{p.service_type_slug}</td>
+                  <td style={cellStyle}>{p.tier}</td>
+                  <td style={cellStyle}>₹{p.amount}</td>
+                  <td style={cellStyle}>{p.included_usage_quota ?? "—"}{p.usage_unit_label ? ` ${p.usage_unit_label}` : ""}</td>
+                  <td style={cellStyle}>{p.overage_unit_rate != null ? `₹${p.overage_unit_rate}` : "—"}</td>
+                  <td style={cellStyle}>{new Date(p.effective_from).toLocaleString()}</td>
+                  <td style={cellStyle}>{p.effective_to ? new Date(p.effective_to).toLocaleString() : "open"}</td>
+                  <td style={{ ...cellStyle, color: statusColor[status], fontWeight: 600 }}>{status}</td>
+                  <td style={cellStyle}>{p.note ?? "—"}</td>
                 </tr>
               );
             })}

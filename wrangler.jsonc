@@ -14,7 +14,7 @@
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
 	},
-	// Two cron entries, told apart in worker.ts's scheduled() handler by
+	// Three cron entries, told apart in worker.ts's scheduled() handler by
 	// event.cron:
 	//   "*/1 * * * *" — drains the Postgres -> Neo4j entity_sync_queue
 	//     outbox every minute (siringetbase/entity-graph/data-sync-architecture.md
@@ -26,8 +26,15 @@
 	//     (src/lib/admin/audit-log-purge.ts) — the owner's request that a
 	//     deleted log entry go to a bin first, then get trashed out on a
 	//     weekly schedule, not deleted for real immediately.
+	//   "0 5 * * *" — daily, 05:00 UTC: triggers cafocus/app's recurring
+	//     module-subscription billing cycle
+	//     (src/lib/billing/subscription-billing-trigger.ts) — auto-renew
+	//     mandates get charged, manual_monthly subscriptions get a pending
+	//     invoice + reminder email. Runs after the weekly purge's cadence
+	//     concern doesn't apply here (daily, since a subscription period can
+	//     end any day), but still off-peak relative to the 03:00 purge.
 	"triggers": {
-		"crons": ["*/1 * * * *", "0 3 * * 0"]
+		"crons": ["*/1 * * * *", "0 3 * * 0", "0 5 * * *"]
 	},
 	// Workers AI binding — shared Model Gateway provider for Document
 	// Intelligence and Knowledge RAG (see ../document-intelligence/README.md,

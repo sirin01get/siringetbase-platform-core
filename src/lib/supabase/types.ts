@@ -53,7 +53,7 @@ export interface Database {
           engagement_id: string | null;
           amount: number;
           currency: string;
-          type: "collection" | "payout" | "refund";
+          type: "collection" | "payout" | "refund" | "subscription_charge";
           status: "pending" | "completed" | "failed";
           gateway_provider: string | null;
           created_at: string;
@@ -65,7 +65,7 @@ export interface Database {
           engagement_id?: string | null;
           amount: number;
           currency?: string;
-          type: "collection" | "payout" | "refund";
+          type: "collection" | "payout" | "refund" | "subscription_charge";
           status?: "pending" | "completed" | "failed";
           gateway_provider?: string | null;
           created_at?: string;
@@ -476,6 +476,64 @@ export interface Database {
           created_at?: string;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["platform_membership_fees"]["Insert"]>;
+      };
+      // Module subscription plans — 0020_module_subscription_plans.sql. See
+      // src/lib/billing/subscription-plans.ts.
+      module_subscription_plans: {
+        Row: {
+          id: string;
+          vertical: string;
+          service_type_slug: string;
+          tier: string;
+          amount: number;
+          included_usage_quota: number | null;
+          overage_unit_rate: number | null;
+          usage_unit_label: string | null;
+          effective_from: string;
+          effective_to: string | null;
+          note: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          vertical: string;
+          service_type_slug: string;
+          tier: string;
+          amount: number;
+          included_usage_quota?: number | null;
+          overage_unit_rate?: number | null;
+          usage_unit_label?: string | null;
+          effective_from: string;
+          effective_to?: string | null;
+          note?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["module_subscription_plans"]["Insert"]>;
+      };
+      // A recurring auto-debit authorization — 0020_module_subscription_plans.sql.
+      // See src/lib/payments/recurring.ts.
+      payment_mandates: {
+        Row: {
+          id: string;
+          role_profile_id: string;
+          vertical: string;
+          provider: string;
+          mandate_reference: string;
+          status: "active" | "failed" | "pending" | "cancelled";
+          created_at: string;
+          cancelled_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          role_profile_id: string;
+          vertical: string;
+          provider: string;
+          mandate_reference: string;
+          status?: "active" | "failed" | "pending" | "cancelled";
+          created_at?: string;
+          cancelled_at?: string | null;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["payment_mandates"]["Insert"]>;
       };
       // Phase 5 marketplace (CA Focus) slice 10 — 0009_activity_analytics.sql.
       // See ../../../user-analytics/README.md. Verticals write directly

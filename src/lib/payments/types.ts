@@ -36,10 +36,43 @@ export interface RefundResult {
   rawResponse: Record<string, unknown>;
 }
 
+// Recurring-billing extension — a mandate is a stored auto-debit
+// authorization (Razorpay/Cashfree/PayU e-mandate / UPI Autopay in a real
+// integration); chargeMandate() draws against an already-created one on a
+// cadence. This is separate from charge()/refund() because a mandate has
+// its own lifecycle (create once, charge many times, can fail/lapse
+// independently of any single charge) — see
+// ../../../../cafocus/app/src/lib/subscriptions/ for the caller
+// (module-subscription recurring billing, "auto-renew" mode).
+export interface MandateRequest {
+  roleProfileId: string;
+  vertical: string;
+  description: string; // mocks look for FORCE_FAIL / FORCE_PENDING here — see mock-helpers.ts
+}
+
+export interface MandateResult {
+  success: boolean;
+  mandateReference: string;
+  status: "active" | "failed" | "pending";
+  failureReason?: string;
+  rawResponse: Record<string, unknown>;
+}
+
+export interface MandateChargeRequest {
+  mandateReference: string;
+  amount: number;
+  currency: string;
+  description: string; // mocks look for FORCE_FAIL / FORCE_PENDING here
+}
+
 export interface PaymentGatewayPort {
   readonly providerName: string;
   charge(request: ChargeRequest): Promise<ChargeResult>;
   refund(request: RefundRequest): Promise<RefundResult>;
+  createMandate(request: MandateRequest): Promise<MandateResult>;
+  // Reuses ChargeResult — a mandate draw is a charge in every way that
+  // matters to a caller, it just authenticates differently than charge().
+  chargeMandate(request: MandateChargeRequest): Promise<ChargeResult>;
 }
 
 export interface PayoutRequest {

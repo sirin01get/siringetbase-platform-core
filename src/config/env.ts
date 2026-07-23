@@ -109,4 +109,26 @@ export const env = {
   // never a browser. MUST match the calling vertical's own
   // PAYMENTS_INTERNAL_SECRET exactly.
   paymentsInternalSecret: () => required("PAYMENTS_INTERNAL_SECRET", process.env.PAYMENTS_INTERNAL_SECRET),
+
+  // Recurring module-subscription billing — the first *reverse*-direction
+  // cross-Worker call in this build (every other internal surface above is
+  // platform-core being called BY a vertical; this is platform-core calling
+  // OUT to cafocus/app). worker.ts's weekly-purge-shaped cron can't reach
+  // cafocus.ca_module_subscriptions directly — this Supabase client is
+  // hardcoded to db.schema: "siringetbase" (src/lib/supabase/server.ts),
+  // and a vertical's own schema is deliberately private to that vertical's
+  // own app, same boundary every other subsystem here respects (payments,
+  // comms, document-intelligence are all HTTP, never a direct cross-schema
+  // read). So the cron instead pings cafocus/app's own internal endpoint
+  // (POST /api/internal/subscriptions/run-billing-cycle) once a day; that
+  // route does the actual work with its own cafocus-schema client, then
+  // calls back into THIS app's /api/payments/mandates/charge or
+  // /api/payments/subscriptions/charge to actually collect money — see
+  // src/lib/billing/subscription-billing-trigger.ts.
+  cafocusAppBaseUrl: () => required("CAFOCUS_APP_BASE_URL", process.env.CAFOCUS_APP_BASE_URL),
+  // Separate secret from paymentsInternalSecret() — same "separate secret
+  // per internal surface" posture as documentIntelligenceInternalSecret()
+  // above. MUST match cafocus/app's own SUBSCRIPTIONS_INTERNAL_SECRET.
+  subscriptionsInternalSecret: () =>
+    required("SUBSCRIPTIONS_INTERNAL_SECRET", process.env.SUBSCRIPTIONS_INTERNAL_SECRET),
 };
