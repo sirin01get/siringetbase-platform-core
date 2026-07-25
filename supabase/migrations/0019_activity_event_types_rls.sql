@@ -23,6 +23,7 @@
 -- migration/service-role owner, not through this policy.
 alter table siringetbase.activity_event_types enable row level security;
 
+drop policy if exists "authenticated can read activity event types" on siringetbase.activity_event_types;
 create policy "authenticated can read activity event types"
   on siringetbase.activity_event_types
   for select
