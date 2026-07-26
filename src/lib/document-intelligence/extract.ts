@@ -1,5 +1,6 @@
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { runVisionModel, runTextModel, convertToMarkdown } from "./model-gateway";
+import { extractScannedPdfPageImages, mergeExtractedPages, MAX_OCR_PAGES } from "./pdf-ocr";
 
 // Genuine raster photos go straight to the vision-instruct model unchanged
 // (image bytes + prompt). Everything else this pipeline realistically sees
@@ -145,7 +146,10 @@ export async function extractDocument(params: {
 
   const instruction = `${template.prompt}\n\nRespond with ONLY a single JSON object matching this schema — no markdown code fences, no explanation before or after it: ${JSON.stringify(template.output_schema)}`;
 
-  let rawText: string;
+  let rawText: string | null = null;
+  let parsed: unknown = null;
+  let ocrPageCount: number | null = null;
+
   try {
     if (VISION_COMPATIBLE_TYPES.has(params.contentType)) {
       rawText = await runVisionModel({ imageBytes: params.imageBytes, prompt: instruction });
@@ -155,9 +159,64 @@ export async function extractDocument(params: {
         filename: `document.${extensionForContentType(params.contentType)}`,
         contentType: params.contentType,
       });
-      rawText = await runTextModel({
-        prompt: `${instruction}\n\nDocument content (converted from the original file to text):\n${markdown}`,
-      });
+
+      // For a PDF specifically, Cloudflare's Markdown Conversion service
+      // extracts an existing text layer (via the PDF's StructTree, or the
+      // page text as-is) — it does NOT run OCR on a page that's just an
+      // embedded image with no text layer at all. That's exactly what a
+      // scanned/photographed document saved as .pdf looks like: real
+      // pages, zero extractable text. A generated/digital PDF (e.g. Form
+      // 26AS downloaded straight from the income tax portal) always has a
+      // real text layer and converts fine; a scanned one comes back
+      // near-empty instead.
+      const looksLikeScannedPdf = params.contentType === "application/pdf" && markdown.replace(/\s+/g, "").length < 40;
+
+      if (looksLikeScannedPdf) {
+        // pdf-ocr.ts's fallback: pull the embedded page images back out and
+        // run each through the vision model directly, then merge. This is
+        // UNVERIFIED against a live deploy (see that file's header comment)
+        // — any failure anywhere in this chain (unpdf parsing, the WASM PNG
+        // re-encode, or a vision call itself) falls straight through to the
+        // catch block below, same clear "not supported" failure as before
+        // this existed. A bug here degrades to an honest error, never a
+        // silent bad extraction.
+        const pages = await extractScannedPdfPageImages(params.imageBytes);
+        if (pages.length === 0) {
+          throw new Error(
+            "This PDF doesn't appear to contain a text layer, and no page images could be extracted from it either — it may be a scanned or photographed document in a format this pipeline can't read yet. Try uploading the original digital file if one is available."
+          );
+        }
+        const pageResults: Record<string, unknown>[] = [];
+        for (const page of pages) {
+          const pageInstruction = `${instruction}\n\nThis is page ${page.pageNumber} of a ${pages.length}-page scanned document — some fields may only appear on other pages, that's expected.`;
+          const pageRawText = await runVisionModel({ imageBytes: page.pngBytes, prompt: pageInstruction });
+          const pageJsonText = stripToJsonObject(pageRawText);
+          if (pageJsonText) {
+            try {
+              const pageParsed = JSON.parse(pageJsonText);
+              if (pageParsed && typeof pageParsed === "object") {
+                pageResults.push(pageParsed as Record<string, unknown>);
+              }
+            } catch {
+              // One unparseable page shouldn't sink an otherwise-good
+              // multi-page merge — skip it, same "best effort, not
+              // all-or-nothing" posture as the rest of this fallback.
+            }
+          }
+        }
+        if (pageResults.length === 0) {
+          throw new Error(
+            "Extracted page images from this scanned PDF, but the vision model couldn't read structured data from any of them."
+          );
+        }
+        parsed = mergeExtractedPages(pageResults);
+        ocrPageCount = pages.length;
+        rawText = JSON.stringify({ ocrMergedFrom: pages.length, pages: pageResults });
+      } else {
+        rawText = await runTextModel({
+          prompt: `${instruction}\n\nDocument content (converted from the original file to text):\n${markdown}`,
+        });
+      }
     } else {
       throw new Error(
         `Uploaded file type "${params.contentType}" isn't supported for extraction (expected a PDF or a JPEG/PNG/WEBP/GIF image).`
@@ -173,13 +232,17 @@ export async function extractDocument(params: {
     return { status: "failed", reason: message, jobId: job.id };
   }
 
-  const jsonText = stripToJsonObject(rawText);
-  let parsed: unknown = null;
-  if (jsonText) {
-    try {
-      parsed = JSON.parse(jsonText);
-    } catch {
-      parsed = null;
+  // The scanned-PDF OCR branch above already sets `parsed` directly (it's
+  // a merge of several pages' JSON, not one bare model response) — only
+  // run the single-response strip+parse for every other path.
+  if (parsed === null && rawText !== null) {
+    const jsonText = stripToJsonObject(rawText);
+    if (jsonText) {
+      try {
+        parsed = JSON.parse(jsonText);
+      } catch {
+        parsed = null;
+      }
     }
   }
 
@@ -198,11 +261,19 @@ export async function extractDocument(params: {
 
   const { confidence } = scoreExtraction(parsed, template.output_schema);
 
+  // ocrPageCount is only set on the scanned-PDF OCR fallback path — surface
+  // it (and whether MAX_OCR_PAGES cut the document short) in raw_output so
+  // a truncated multi-page scan is visible to whoever reviews the job, not
+  // silently dropped. Every other path leaves ocrPageCount null and this
+  // adds nothing to raw_output.
+  const ocrMeta =
+    ocrPageCount !== null ? { ocrPageCount, ocrTruncated: ocrPageCount >= MAX_OCR_PAGES } : {};
+
   await supabase
     .from("extraction_jobs")
     .update({
       status: "completed",
-      raw_output: { text: rawText },
+      raw_output: { text: rawText, ...ocrMeta },
       interpretation: parsed as Record<string, unknown>,
       confidence,
       completed_at: new Date().toISOString(),
