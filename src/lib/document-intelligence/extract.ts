@@ -1,5 +1,45 @@
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { runVisionModel } from "./model-gateway";
+import { runVisionModel, runTextModel, convertToMarkdown } from "./model-gateway";
+
+// Genuine raster photos go straight to the vision-instruct model unchanged
+// (image bytes + prompt). Everything else this pipeline realistically sees
+// — PDFs above all, since Form 16/16A/26AS, AIS, and GST invoices are all
+// normally downloaded or issued as PDFs, not photographed — is NOT a valid
+// `image` param for that model (Workers AI error 3030: "Provided image is
+// not compatible or malformed"). Those go through convertToMarkdown()
+// first instead. Kept as an explicit allowlist rather than "anything
+// image/* goes to vision, else markdown" so an unexpected image subtype
+// (e.g. image/heic, which neither path here actually supports) fails with
+// a clear reason instead of silently attempting the wrong pipeline.
+const VISION_COMPATIBLE_TYPES = new Set(["image/jpeg", "image/jpg", "image/png", "image/webp", "image/gif"]);
+
+// Formats convertToMarkdown() (Workers AI's Markdown Conversion service)
+// actually supports — see
+// https://developers.cloudflare.com/workers-ai/features/markdown-conversion/supported-formats/
+// for the full list; this is the subset relevant to what this pipeline's
+// document intake UIs actually let someone upload today.
+const MARKDOWN_CONVERTIBLE_TYPES = new Set([
+  "application/pdf",
+  "text/csv",
+  "text/html",
+  "application/xml",
+  "text/xml",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+]);
+
+function extensionForContentType(contentType: string): string {
+  const map: Record<string, string> = {
+    "application/pdf": "pdf",
+    "text/csv": "csv",
+    "text/html": "html",
+    "application/xml": "xml",
+    "text/xml": "xml",
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document": "docx",
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+  };
+  return map[contentType] ?? "bin";
+}
 
 // Extraction orchestration — the "run_extraction(job_id)" step of
 // ../../../document-intelligence/README.md's Pipeline (Generic) section,
@@ -107,7 +147,22 @@ export async function extractDocument(params: {
 
   let rawText: string;
   try {
-    rawText = await runVisionModel({ imageBytes: params.imageBytes, prompt: instruction });
+    if (VISION_COMPATIBLE_TYPES.has(params.contentType)) {
+      rawText = await runVisionModel({ imageBytes: params.imageBytes, prompt: instruction });
+    } else if (MARKDOWN_CONVERTIBLE_TYPES.has(params.contentType)) {
+      const markdown = await convertToMarkdown({
+        bytes: params.imageBytes,
+        filename: `document.${extensionForContentType(params.contentType)}`,
+        contentType: params.contentType,
+      });
+      rawText = await runTextModel({
+        prompt: `${instruction}\n\nDocument content (converted from the original file to text):\n${markdown}`,
+      });
+    } else {
+      throw new Error(
+        `Uploaded file type "${params.contentType}" isn't supported for extraction (expected a PDF or a JPEG/PNG/WEBP/GIF image).`
+      );
+    }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     await supabase
