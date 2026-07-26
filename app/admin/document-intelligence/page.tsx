@@ -12,8 +12,11 @@ interface TemplateRow {
   outputSchema: Record<string, unknown>;
   confidenceThreshold: number;
   requiresHumanReview: boolean;
+  maxTokens: number;
   createdAt: string;
 }
+
+const DEFAULT_MAX_TOKENS = "2048";
 
 const DEFAULT_SCHEMA = '{\n  "type": "object",\n  "required": [],\n  "properties": {}\n}';
 
@@ -55,6 +58,7 @@ function DocumentIntelligenceAdminPageInner() {
   const [outputSchema, setOutputSchema] = useState(DEFAULT_SCHEMA);
   const [confidenceThreshold, setConfidenceThreshold] = useState("0.8");
   const [requiresHumanReview, setRequiresHumanReview] = useState(true);
+  const [maxTokens, setMaxTokens] = useState(DEFAULT_MAX_TOKENS);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -82,6 +86,7 @@ function DocumentIntelligenceAdminPageInner() {
     setOutputSchema(JSON.stringify(row.outputSchema, null, 2));
     setConfidenceThreshold(String(row.confidenceThreshold));
     setRequiresHumanReview(row.requiresHumanReview);
+    setMaxTokens(String(row.maxTokens));
     setInfo(`Editing "${row.documentType}" (${row.vertical}) — saving will replace this template's prompt/schema.`);
   }
 
@@ -102,6 +107,7 @@ function DocumentIntelligenceAdminPageInner() {
         output_schema: outputSchema,
         confidence_threshold: Number(confidenceThreshold),
         requires_human_review: requiresHumanReview,
+        max_tokens: Number(maxTokens),
       }),
     });
     const body = (await res.json().catch(() => ({}))) as { status: string; message?: string };
@@ -115,6 +121,7 @@ function DocumentIntelligenceAdminPageInner() {
       setOutputSchema(DEFAULT_SCHEMA);
       setConfidenceThreshold("0.8");
       setRequiresHumanReview(true);
+      setMaxTokens(DEFAULT_MAX_TOKENS);
     }
     setSaving(false);
     await load();
@@ -128,6 +135,18 @@ function DocumentIntelligenceAdminPageInner() {
         <code>document_type</code> + <code>vertical</code>. Without one, upload still works — the document is just
         stored, never read. Every template here should have <code>requires_human_review</code> on unless you&apos;re
         confident enough in a document type to skip a CA&apos;s review of what the model extracted.
+      </p>
+      <p>
+        <strong>Max output tokens</strong> caps how long the model&apos;s response can get before it&apos;s cut off.
+        Set it too low for a document type whose schema can produce a lot of output (an open-ended array, especially
+        — this is exactly what happened to AIS: its <code>entries</code> array is unbounded, unlike every other
+        template&apos;s fixed handful of fields) and the response gets truncated mid-JSON, which then fails to parse
+        even after cleanup — surfaces to the person reviewing it as &ldquo;Model output wasn&apos;t valid
+        JSON.&rdquo; Kept per-template rather than one global setting, since output size is really a property of the
+        document type&apos;s schema, not the pipeline. It&apos;s also deliberately provider-agnostic — see{" "}
+        <code>src/lib/document-intelligence/model-gateway.ts</code>&apos;s header comment — so this value still means
+        the same thing if a second AI provider is ever wired in alongside Workers AI; only the exact token count
+        would need retuning per provider, since tokenizers differ.
       </p>
 
       {error && <p style={{ color: "crimson" }}>{error}</p>}
@@ -166,6 +185,21 @@ function DocumentIntelligenceAdminPageInner() {
             step="0.05"
             value={confidenceThreshold}
             onChange={(e) => setConfidenceThreshold(e.target.value)}
+            style={inputStyle}
+          />
+        </label>
+        <label>
+          Max output tokens{" "}
+          <span style={{ fontWeight: 400, color: "#666" }} title="How much of a response the model is allowed to generate before it gets cut off. Too low silently truncates the response mid-JSON, which then fails to parse — this is what happened to a real AIS extraction (its 'entries' array is open-ended, unlike every other template's fixed handful of fields). Workers AI's own default is 256, which is why this exists at all.">
+            (?)
+          </span>
+          <input
+            type="number"
+            min="256"
+            max="32000"
+            step="256"
+            value={maxTokens}
+            onChange={(e) => setMaxTokens(e.target.value)}
             style={inputStyle}
           />
         </label>
@@ -212,6 +246,7 @@ function DocumentIntelligenceAdminPageInner() {
               <th style={cellStyle}>Vertical</th>
               <th style={cellStyle}>Owning module</th>
               <th style={cellStyle}>Confidence threshold</th>
+              <th style={cellStyle}>Max tokens</th>
               <th style={cellStyle}>Human review</th>
               <th style={cellStyle}>Actions</th>
             </tr>
@@ -223,6 +258,7 @@ function DocumentIntelligenceAdminPageInner() {
                 <td style={cellStyle}>{r.vertical}</td>
                 <td style={cellStyle}>{r.owningModule}</td>
                 <td style={cellStyle}>{r.confidenceThreshold}</td>
+                <td style={cellStyle}>{r.maxTokens}</td>
                 <td style={cellStyle}>{r.requiresHumanReview ? "Required" : "Not required"}</td>
                 <td style={cellStyle}>
                   <button type="button" onClick={() => editRow(r)}>

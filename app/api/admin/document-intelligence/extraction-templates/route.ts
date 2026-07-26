@@ -11,7 +11,14 @@ interface UpsertBody {
   output_schema?: string; // JSON text from a textarea, parsed below
   confidence_threshold?: number;
   requires_human_review?: boolean;
+  max_tokens?: number;
 }
+
+// Same default the migration backfilled every existing row to
+// (0023_extraction_template_max_tokens.sql) — applied here too so an old
+// client (or a request that just omits the field) still gets a sane
+// value instead of accidentally clearing it back to something small.
+const DEFAULT_MAX_TOKENS = 2048;
 
 // Admin control plane for siringetbase.extraction_templates — see
 // ../../../../../src/lib/document-intelligence/templates.ts's header
@@ -76,6 +83,17 @@ export async function POST(request: Request) {
     return NextResponse.json({ status: "error", message: "confidence_threshold must be between 0 and 1." }, { status: 400 });
   }
 
+  const maxTokens = body.max_tokens ?? DEFAULT_MAX_TOKENS;
+  // Workers AI's own ceiling for this model's context window is 128,000
+  // tokens total (prompt + response combined) — 32,000 is a generous
+  // upper bound for a response alone that still leaves headroom, not a
+  // precise provider limit baked in here. Floor of 256 matches Workers
+  // AI's own default, so this field can't be set to something that
+  // reproduces the exact bug it exists to prevent.
+  if (!Number.isInteger(maxTokens) || maxTokens < 256 || maxTokens > 32000) {
+    return NextResponse.json({ status: "error", message: "max_tokens must be an integer between 256 and 32000." }, { status: 400 });
+  }
+
   try {
     const result = await upsertExtractionTemplate({
       documentType: body.document_type.trim(),
@@ -85,6 +103,7 @@ export async function POST(request: Request) {
       outputSchema,
       confidenceThreshold,
       requiresHumanReview: body.requires_human_review ?? true,
+      maxTokens,
     });
     await writeAuditLog({
       actor: auth.actor,

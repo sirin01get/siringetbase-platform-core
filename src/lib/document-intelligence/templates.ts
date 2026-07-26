@@ -24,6 +24,13 @@ export interface ExtractionTemplateRow {
   outputSchema: Record<string, unknown>;
   confidenceThreshold: number;
   requiresHumanReview: boolean;
+  // 0023_extraction_template_max_tokens.sql — see that migration's comment
+  // for why this is per-template rather than a pipeline-wide constant, and
+  // ./model-gateway.ts's header comment for why it's threaded through as a
+  // plain, provider-agnostic parameter (not a Workers-AI-specific option),
+  // which is what makes this the right place to store it even ahead of a
+  // second AI provider ever being added.
+  maxTokens: number;
   createdAt: string;
 }
 
@@ -31,7 +38,7 @@ export async function listExtractionTemplates(vertical?: string): Promise<Extrac
   const supabase = createSupabaseServiceRoleClient();
   let query = supabase
     .from("extraction_templates")
-    .select("id, document_type, vertical, owning_module, prompt, output_schema, confidence_threshold, requires_human_review, created_at")
+    .select("id, document_type, vertical, owning_module, prompt, output_schema, confidence_threshold, requires_human_review, max_tokens, created_at")
     .order("vertical", { ascending: true })
     .order("document_type", { ascending: true });
   if (vertical) query = query.eq("vertical", vertical);
@@ -48,6 +55,7 @@ export async function listExtractionTemplates(vertical?: string): Promise<Extrac
     outputSchema: r.output_schema as Record<string, unknown>,
     confidenceThreshold: r.confidence_threshold,
     requiresHumanReview: r.requires_human_review,
+    maxTokens: r.max_tokens,
     createdAt: r.created_at,
   }));
 }
@@ -65,6 +73,7 @@ export async function upsertExtractionTemplate(params: {
   outputSchema: Record<string, unknown>;
   confidenceThreshold: number;
   requiresHumanReview: boolean;
+  maxTokens: number;
 }): Promise<{ id: string }> {
   const supabase = createSupabaseServiceRoleClient();
 
@@ -79,6 +88,7 @@ export async function upsertExtractionTemplate(params: {
         output_schema: params.outputSchema,
         confidence_threshold: params.confidenceThreshold,
         requires_human_review: params.requiresHumanReview,
+        max_tokens: params.maxTokens,
       },
       { onConflict: "document_type,vertical" }
     )

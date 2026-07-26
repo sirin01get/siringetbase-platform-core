@@ -234,6 +234,13 @@ export interface Database {
           output_schema: Record<string, unknown>;
           confidence_threshold: number;
           requires_human_review: boolean;
+          // 0023_extraction_template_max_tokens.sql — output token ceiling
+          // passed straight through to whichever AI provider extract.ts
+          // calls; see that migration's comment for why this is
+          // per-template (schema-driven output size) rather than a global
+          // pipeline constant, and why it's the right shape to carry
+          // forward if a second AI provider is ever added.
+          max_tokens: number;
           created_at: string;
         };
         Insert: {
@@ -245,6 +252,7 @@ export interface Database {
           output_schema: Record<string, unknown>;
           confidence_threshold?: number;
           requires_human_review?: boolean;
+          max_tokens?: number;
           created_at?: string;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["extraction_templates"]["Insert"]>;

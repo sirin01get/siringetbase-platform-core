@@ -119,7 +119,7 @@ export async function extractDocument(params: {
 
   const { data: template } = await supabase
     .from("extraction_templates")
-    .select("id, prompt, output_schema, confidence_threshold")
+    .select("id, prompt, output_schema, confidence_threshold, max_tokens")
     .eq("document_type", doc.document_type)
     .eq("vertical", doc.vertical)
     .maybeSingle();
@@ -152,7 +152,7 @@ export async function extractDocument(params: {
 
   try {
     if (VISION_COMPATIBLE_TYPES.has(params.contentType)) {
-      rawText = await runVisionModel({ imageBytes: params.imageBytes, prompt: instruction });
+      rawText = await runVisionModel({ imageBytes: params.imageBytes, prompt: instruction, maxTokens: template.max_tokens });
     } else if (MARKDOWN_CONVERTIBLE_TYPES.has(params.contentType)) {
       const markdown = await convertToMarkdown({
         bytes: params.imageBytes,
@@ -189,7 +189,13 @@ export async function extractDocument(params: {
         const pageResults: Record<string, unknown>[] = [];
         for (const page of pages) {
           const pageInstruction = `${instruction}\n\nThis is page ${page.pageNumber} of a ${pages.length}-page scanned document — some fields may only appear on other pages, that's expected.`;
-          const pageRawText = await runVisionModel({ imageBytes: page.pngBytes, prompt: pageInstruction });
+          // Same per-template ceiling as the non-OCR paths, applied per
+          // page rather than divided across pages — a single page's own
+          // entries still need real headroom (e.g. one AIS page can carry
+          // several information categories on its own), and
+          // mergeExtractedPages() below is what combines the pages, not a
+          // shared token budget between them.
+          const pageRawText = await runVisionModel({ imageBytes: page.pngBytes, prompt: pageInstruction, maxTokens: template.max_tokens });
           const pageJsonText = stripToJsonObject(pageRawText);
           if (pageJsonText) {
             try {
@@ -215,6 +221,7 @@ export async function extractDocument(params: {
       } else {
         rawText = await runTextModel({
           prompt: `${instruction}\n\nDocument content (converted from the original file to text):\n${markdown}`,
+          maxTokens: template.max_tokens,
         });
       }
     } else {

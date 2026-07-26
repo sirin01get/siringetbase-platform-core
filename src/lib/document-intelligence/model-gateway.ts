@@ -25,6 +25,25 @@
 // is built; OpenAI fallback is flagged, not implemented, since it would
 // need a new external API key this build doesn't have configured anywhere).
 //
+// runVisionModel()/runTextModel() take `maxTokens` as a plain named
+// parameter, not nested inside a Workers-AI-shaped options object — root-
+// caused fix for a real bug (0023_extraction_template_max_tokens.sql):
+// neither function used to set it at all, so every call silently used
+// Workers AI's own default of 256 output tokens, which truncated a real
+// AIS extraction (its output_schema has the one genuinely open-ended
+// array among this pipeline's templates) mid-response, producing text
+// that failed even the cleanup pass in extract.ts's stripToJsonObject().
+// Deliberately named/shaped so a future OpenAI (or other) adapter can
+// accept the exact same `maxTokens` param and mean the same thing — the
+// caller (extract.ts) shouldn't have to know or care which provider is
+// actually running underneath. The one thing this does NOT make portable:
+// a token COUNT is tokenizer-specific, so a value tuned against this
+// model isn't an exact match for another provider's tokenizer — still the
+// right order of magnitude, just not a byte-for-byte guarantee. See
+// 0023_extraction_template_max_tokens.sql's comment for the full
+// reasoning on why this lives on extraction_templates per-row rather than
+// as a single pipeline-wide constant.
+//
 // runVisionModel() below is for genuine raster images only — every
 // document_type this pipeline actually targets today (Form 16/16A/26AS,
 // AIS, GST invoices — see supabase/migrations/0021_extraction_templates_seed.sql)
@@ -39,13 +58,22 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 
-export async function runVisionModel(params: { imageBytes: ArrayBuffer; prompt: string }): Promise<string> {
+// Fallback only for a caller that doesn't pass one at all — every real
+// call site (extract.ts) always does, reading it off the template row, so
+// this only matters for some future caller that forgets. Matches
+// 0023_extraction_template_max_tokens.sql's own column default, not
+// Workers AI's much lower built-in one (256) — the whole point of this
+// parameter existing is to not fall back to that.
+const FALLBACK_MAX_TOKENS = 2048;
+
+export async function runVisionModel(params: { imageBytes: ArrayBuffer; prompt: string; maxTokens?: number }): Promise<string> {
   const { env } = getCloudflareContext();
   const image = [...new Uint8Array(params.imageBytes)];
 
   const result = await env.AI.run(MODEL, {
     image,
     prompt: params.prompt,
+    max_tokens: params.maxTokens ?? FALLBACK_MAX_TOKENS,
   });
 
   return extractTextFromModelResult(result);
@@ -56,9 +84,9 @@ export async function runVisionModel(params: { imageBytes: ArrayBuffer; prompt: 
 // convertToMarkdown() below, so the model just has to follow the
 // extraction instruction against plain text, the same task it already does
 // for a photographed document, just without needing to read pixels itself.
-export async function runTextModel(params: { prompt: string }): Promise<string> {
+export async function runTextModel(params: { prompt: string; maxTokens?: number }): Promise<string> {
   const { env } = getCloudflareContext();
-  const result = await env.AI.run(MODEL, { prompt: params.prompt });
+  const result = await env.AI.run(MODEL, { prompt: params.prompt, max_tokens: params.maxTokens ?? FALLBACK_MAX_TOKENS });
   return extractTextFromModelResult(result);
 }
 
