@@ -131,4 +131,15 @@ export const env = {
   // above. MUST match cafocus/app's own SUBSCRIPTIONS_INTERNAL_SECRET.
   subscriptionsInternalSecret: () =>
     required("SUBSCRIPTIONS_INTERNAL_SECRET", process.env.SUBSCRIPTIONS_INTERNAL_SECRET),
+
+  // Env-check precheck dashboard (../lib/admin/env-check.ts,
+  // app/api/internal/env-check/route.ts) — the owner's ask after
+  // PLATFORM_CORE_BASE_URL twice went missing on cafocus/app's Cloudflare
+  // Worker without anyone noticing until a specific feature broke: "create
+  // a separate dashboard for admin where all such variables are checked."
+  // Same "separate secret per internal surface" posture as every other
+  // internal secret on this page — gates cafocus/app's combined dashboard
+  // reading THIS deployment's report. MUST match cafocus/app's own
+  // ENV_CHECK_INTERNAL_SECRET.
+  envCheckInternalSecret: () => required("ENV_CHECK_INTERNAL_SECRET", process.env.ENV_CHECK_INTERNAL_SECRET),
 };

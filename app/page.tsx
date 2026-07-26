@@ -45,6 +45,11 @@ export default async function StatusPage() {
           entity_sync_queue rows (dead-lettered, legacy failed, or still backing off), with a manual
           retry-and-push action.
         </li>
+        <li>
+          <a href={`${origin}/admin/env-check`}>{origin}/admin/env-check</a> — every environment variable
+          this deployment reads, whether it&apos;s configured, and (for URL-shaped values) whether it looks
+          valid. See cafocus/app&apos;s own <code>/admin/env-check</code> for the combined cross-Worker view.
+        </li>
       </ul>
     </main>
   );
