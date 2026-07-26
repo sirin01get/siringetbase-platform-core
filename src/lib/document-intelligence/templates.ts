@@ -65,6 +65,14 @@ export async function listExtractionTemplates(vertical?: string): Promise<Extrac
 // one template per document type per vertical, so re-submitting the same
 // pair from the admin UI is a deliberate "replace the prompt/schema" edit,
 // not an error.
+//
+// Phase 3 of the ITR_gov_change agent added a hard prerequisite (see
+// ../../supabase/migrations/0024_extraction_templates_versions.sql's header
+// comment): before this ever overwrites an EXISTING row, that row's prior
+// state is snapshotted into extraction_templates_versions first —
+// unconditionally, for every edit through this function, not just
+// draft-apply ones. A brand-new (document_type, vertical) pair has nothing
+// to snapshot, since there's no prior row to lose.
 export async function upsertExtractionTemplate(params: {
   documentType: string;
   vertical: string;
@@ -74,8 +82,43 @@ export async function upsertExtractionTemplate(params: {
   confidenceThreshold: number;
   requiresHumanReview: boolean;
   maxTokens: number;
+  // Who/why this edit is happening — both optional so a caller that
+  // genuinely has neither (there shouldn't be one; every real caller is an
+  // authenticated admin action) doesn't need to fabricate a value.
+  versionedByRoleProfileId?: string | null;
+  changeReason?: string | null;
 }): Promise<{ id: string }> {
   const supabase = createSupabaseServiceRoleClient();
+
+  const { data: existing } = await supabase
+    .from("extraction_templates")
+    .select("id, document_type, vertical, owning_module, prompt, output_schema, confidence_threshold, requires_human_review, max_tokens")
+    .eq("document_type", params.documentType)
+    .eq("vertical", params.vertical)
+    .maybeSingle();
+
+  if (existing) {
+    const { error: versionError } = await supabase.from("extraction_templates_versions").insert({
+      template_id: existing.id,
+      document_type: existing.document_type,
+      vertical: existing.vertical,
+      owning_module: existing.owning_module,
+      prompt: existing.prompt,
+      output_schema: existing.output_schema,
+      confidence_threshold: existing.confidence_threshold,
+      requires_human_review: existing.requires_human_review,
+      max_tokens: existing.max_tokens,
+      versioned_by: params.versionedByRoleProfileId ?? null,
+      change_reason: params.changeReason ?? null,
+    });
+    // A snapshot failure must block the overwrite, not just get logged —
+    // the entire point of this table is that a template is never replaced
+    // without a recoverable copy existing first. Throwing here means the
+    // upsert below never runs.
+    if (versionError) {
+      throw new Error(`Could not snapshot existing template before saving over it: ${versionError.message}`);
+    }
+  }
 
   const { data, error } = await supabase
     .from("extraction_templates")
@@ -97,4 +140,99 @@ export async function upsertExtractionTemplate(params: {
 
   if (error || !data) throw new Error(`Could not save extraction template: ${error?.message ?? "unknown error"}`);
   return { id: data.id };
+}
+
+export interface ExtractionTemplateVersionRow {
+  id: string;
+  templateId: string | null;
+  documentType: string;
+  vertical: string;
+  owningModule: string;
+  prompt: string;
+  outputSchema: Record<string, unknown>;
+  confidenceThreshold: number;
+  requiresHumanReview: boolean;
+  maxTokens: number;
+  versionedAt: string;
+  versionedByLabel: string | null;
+  changeReason: string | null;
+}
+
+export async function listTemplateVersions(templateId: string): Promise<ExtractionTemplateVersionRow[]> {
+  const supabase = createSupabaseServiceRoleClient();
+  const { data, error } = await supabase
+    .from("extraction_templates_versions")
+    .select(
+      "id, template_id, document_type, vertical, owning_module, prompt, output_schema, confidence_threshold, requires_human_review, max_tokens, versioned_at, versioned_by, change_reason"
+    )
+    .eq("template_id", templateId)
+    .order("versioned_at", { ascending: false });
+
+  if (error) throw new Error(error.message);
+
+  // Same per-row role_profile -> auth.admin.getUserById() lookup as
+  // src/lib/support/error-reports.ts and cafocus/app's
+  // itr-gov-alerts/service.ts use for the same "show a human-readable
+  // reviewer, not a bare uuid" reason — fine at this scale (a template's
+  // own edit history, not a bulk export).
+  const out: ExtractionTemplateVersionRow[] = [];
+  for (const row of data ?? []) {
+    let versionedByLabel: string | null = null;
+    if (row.versioned_by) {
+      const { data: roleProfile } = await supabase.from("role_profiles").select("user_id").eq("id", row.versioned_by).maybeSingle();
+      if (roleProfile?.user_id) {
+        const { data: userData } = await supabase.auth.admin.getUserById(roleProfile.user_id);
+        versionedByLabel = userData.user?.email ?? "admin";
+      }
+    }
+    out.push({
+      id: row.id,
+      templateId: row.template_id,
+      documentType: row.document_type,
+      vertical: row.vertical,
+      owningModule: row.owning_module,
+      prompt: row.prompt,
+      outputSchema: row.output_schema as Record<string, unknown>,
+      confidenceThreshold: row.confidence_threshold,
+      requiresHumanReview: row.requires_human_review,
+      maxTokens: row.max_tokens,
+      versionedAt: row.versioned_at,
+      versionedByLabel,
+      changeReason: row.change_reason,
+    });
+  }
+  return out;
+}
+
+// Recovers a past version as the live row — this is the actual rollback
+// action, not a read-only history view. Goes through
+// upsertExtractionTemplate() itself so restoring is exactly as safe as any
+// other edit: the version being REPLACED by this restore is itself
+// snapshotted first, so a bad restore is always undoable too.
+export async function restoreTemplateVersion(
+  versionId: string,
+  actor: { versionedByRoleProfileId?: string | null }
+): Promise<{ id: string }> {
+  const supabase = createSupabaseServiceRoleClient();
+  const { data: version, error } = await supabase
+    .from("extraction_templates_versions")
+    .select("document_type, vertical, owning_module, prompt, output_schema, confidence_threshold, requires_human_review, max_tokens")
+    .eq("id", versionId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!version) throw new Error(`No version found with id ${versionId}.`);
+
+  return upsertExtractionTemplate({
+    documentType: version.document_type,
+    vertical: version.vertical,
+    owningModule: version.owning_module,
+    prompt: version.prompt,
+    outputSchema: version.output_schema as Record<string, unknown>,
+    confidenceThreshold: version.confidence_threshold,
+    requiresHumanReview: version.requires_human_review,
+    maxTokens: version.max_tokens,
+    versionedByRoleProfileId: actor.versionedByRoleProfileId,
+    changeReason: `Restored from version ${versionId}`,
+  });
 }

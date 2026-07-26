@@ -12,6 +12,12 @@ interface UpsertBody {
   confidence_threshold?: number;
   requires_human_review?: boolean;
   max_tokens?: number;
+  // Optional context for extraction_templates_versions.change_reason —
+  // e.g. cafocus/app's draft-apply link (see that repo's
+  // /admin/itr-gov-alerts) passes something like "Draft-applied from
+  // itr_gov_change_alerts <id>". Plain manual edits through this form
+  // leave it unset.
+  change_reason?: string;
 }
 
 // Same default the migration backfilled every existing row to
@@ -104,6 +110,8 @@ export async function POST(request: Request) {
       confidenceThreshold,
       requiresHumanReview: body.requires_human_review ?? true,
       maxTokens,
+      versionedByRoleProfileId: auth.actor.roleProfileId,
+      changeReason: body.change_reason ?? null,
     });
     await writeAuditLog({
       actor: auth.actor,

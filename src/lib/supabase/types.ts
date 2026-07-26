@@ -257,6 +257,45 @@ export interface Database {
         };
         Update: Partial<Database["siringetbase"]["Tables"]["extraction_templates"]["Insert"]>;
       };
+      // 0024_extraction_templates_versions.sql — snapshot taken immediately
+      // before every extraction_templates overwrite (see
+      // ../document-intelligence/templates.ts's upsertExtractionTemplate()).
+      // Insert-only; never updated.
+      extraction_templates_versions: {
+        Row: {
+          id: string;
+          template_id: string | null;
+          document_type: string;
+          vertical: string;
+          owning_module: string;
+          prompt: string;
+          output_schema: Record<string, unknown>;
+          confidence_threshold: number;
+          requires_human_review: boolean;
+          max_tokens: number;
+          versioned_at: string;
+          versioned_by: string | null;
+          change_reason: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          template_id?: string | null;
+          document_type: string;
+          vertical: string;
+          owning_module: string;
+          prompt: string;
+          output_schema: Record<string, unknown>;
+          confidence_threshold: number;
+          requires_human_review: boolean;
+          max_tokens: number;
+          versioned_at?: string;
+          versioned_by?: string | null;
+          change_reason?: string | null;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["extraction_templates_versions"]["Insert"]>;
+      };
       documents: {
         Row: {
           id: string;
