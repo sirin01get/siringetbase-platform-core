@@ -344,12 +344,77 @@ function subscriptionPaymentDue(data: Record<string, unknown>): RenderedEmail {
   };
 }
 
+// Marketplace notification (individual/business post a requirement) —
+// admin-togglable at cafocus/app's /admin/notification-settings (see
+// src/lib/marketplace/notifications.ts's header comment there for the full
+// event list). Sent to every CA whose active service catalog matches the
+// requirement's service type — see
+// src/lib/marketplace/service.ts's notifyMatchingCasOfRequirement().
+function marketplaceRequirementMatched(data: Record<string, unknown>): RenderedEmail {
+  const requirementTitle = String(data.requirementTitle ?? "A new requirement");
+  const serviceTypeDisplayName = data.serviceTypeDisplayName ? String(data.serviceTypeDisplayName) : null;
+  const clientDisplayName = data.clientDisplayName ? String(data.clientDisplayName) : null;
+  const practiceUrl = String(data.practiceUrl ?? "");
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:${BRAND};">
+          CA Focus
+        </p>
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
+          A new requirement matches your practice
+        </h1>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border-radius:10px;margin:0 0 24px;">
+          <tr>
+            <td style="padding:14px 16px;font-size:14px;color:#334155;">
+              <strong style="color:#0f172a;">${escapeHtml(requirementTitle)}</strong>
+              ${serviceTypeDisplayName ? `<br/>${escapeHtml(serviceTypeDisplayName)}` : ""}
+              ${clientDisplayName ? `<br/>Posted by ${escapeHtml(clientDisplayName)}` : ""}
+            </td>
+          </tr>
+        </table>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+          Send a proposal with your fee if you'd like to take this on.
+        </p>
+        ${
+          practiceUrl
+            ? `<table role="presentation" cellpadding="0" cellspacing="0">
+                 <tr>
+                   <td style="border-radius:10px;background:${BRAND};">
+                     <a href="${escapeHtml(practiceUrl)}"
+                        style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
+                       View requirement
+                     </a>
+                   </td>
+                 </tr>
+               </table>`
+            : ""
+        }
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:20px 32px;background:#fdf2f8;border-top:1px solid #fce7f3;">
+        <p style="margin:0;font-size:12px;color:#9d174d;">
+          Precision work, valued precisely — CA Focus, part of the Siringet platform.
+        </p>
+      </td>
+    </tr>`;
+
+  return {
+    subject: `New requirement: ${requirementTitle}`,
+    html: emailShell({ previewText: `A new requirement matches your practice: ${requirementTitle}`, bodyHtml }),
+    text: `A new requirement matches your practice.\n\n${requirementTitle}${serviceTypeDisplayName ? ` (${serviceTypeDisplayName})` : ""}${clientDisplayName ? `\nPosted by ${clientDisplayName}` : ""}\n\nSend a proposal with your fee if you'd like to take this on.${practiceUrl ? `\n\n${practiceUrl}` : ""}`,
+  };
+}
+
 export const CA_TEMPLATES: Record<string, TemplateRenderer> = {
   "auth.magic_link": authMagicLink,
   "referral.marketer_invite": referralMarketerInvite,
   "verification.approved": verificationApproved,
   "verification.rejected": verificationRejected,
   "subscription.payment_due": subscriptionPaymentDue,
+  "marketplace.requirement_matched": marketplaceRequirementMatched,
 };
 
 // Same copy, addressed to a non-CA recipient — see registry.ts's "prospect"

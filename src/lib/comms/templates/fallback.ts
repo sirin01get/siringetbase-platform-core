@@ -101,7 +101,115 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
   };
 }
 
+// Marketplace notifications for individual/small-business recipients — no
+// dedicated per-role file exists yet for "individual"/"smb_owner" (same gap
+// this file's header comment already documents for auth.magic_link/
+// referral.marketer_invite), so these two live here, generically. Both are
+// admin-togglable at cafocus/app's /admin/notification-settings — see
+// cafocus/app's src/lib/marketplace/notifications.ts.
+function marketplaceProposalReceived(data: Record<string, unknown>): RenderedEmail {
+  const caDisplayName = data.caDisplayName ? String(data.caDisplayName) : "A CA";
+  const requirementTitle = data.requirementTitle ? String(data.requirementTitle) : "your requirement";
+  const feeAmount = data.feeAmount != null ? String(data.feeAmount) : null;
+  const dashboardUrl = String(data.dashboardUrl ?? "");
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#334155;">
+          Siringet
+        </p>
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
+          You've received a proposal
+        </h1>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+          <strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> sent a proposal on
+          &ldquo;${escapeHtml(requirementTitle)}&rdquo;${feeAmount ? ` for ₹${escapeHtml(feeAmount)}` : ""}.
+        </p>
+        ${
+          dashboardUrl
+            ? `<table role="presentation" cellpadding="0" cellspacing="0">
+                 <tr>
+                   <td style="border-radius:10px;background:#0f172a;">
+                     <a href="${escapeHtml(dashboardUrl)}"
+                        style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
+                       View proposal
+                     </a>
+                   </td>
+                 </tr>
+               </table>`
+            : ""
+        }
+      </td>
+    </tr>`;
+
+  return {
+    subject: `${caDisplayName} sent you a proposal`,
+    html: emailShell({ previewText: `${caDisplayName} sent a proposal on ${requirementTitle}`, bodyHtml }),
+    text: `${caDisplayName} sent a proposal on "${requirementTitle}"${feeAmount ? ` for ₹${feeAmount}` : ""}.${dashboardUrl ? `\n\n${dashboardUrl}` : ""}`,
+  };
+}
+
+function marketplaceRequestDecision(data: Record<string, unknown>): RenderedEmail {
+  const decision = String(data.decision ?? "responded") as "accepted" | "declined" | "countered";
+  const caDisplayName = data.caDisplayName ? String(data.caDisplayName) : "The CA";
+  const feeAmount = data.feeAmount != null ? String(data.feeAmount) : null;
+  const declineReason = data.declineReason ? String(data.declineReason) : null;
+  const dashboardUrl = String(data.dashboardUrl ?? "");
+
+  const headline =
+    decision === "accepted"
+      ? "Your request was accepted"
+      : decision === "countered"
+        ? "You have a counter-offer"
+        : "Your request was declined";
+
+  const detail =
+    decision === "accepted"
+      ? `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> accepted your request${feeAmount ? ` for ₹${escapeHtml(feeAmount)}` : ""}.`
+      : decision === "countered"
+        ? `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> proposed a new fee${feeAmount ? `: ₹${escapeHtml(feeAmount)}` : ""}. Accept, decline, or counter from your dashboard.`
+        : `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> declined your request.${declineReason ? ` Reason: ${escapeHtml(declineReason)}` : ""}`;
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#334155;">
+          Siringet
+        </p>
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
+          ${headline}
+        </h1>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+          ${detail}
+        </p>
+        ${
+          dashboardUrl
+            ? `<table role="presentation" cellpadding="0" cellspacing="0">
+                 <tr>
+                   <td style="border-radius:10px;background:#0f172a;">
+                     <a href="${escapeHtml(dashboardUrl)}"
+                        style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
+                       View request
+                     </a>
+                   </td>
+                 </tr>
+               </table>`
+            : ""
+        }
+      </td>
+    </tr>`;
+
+  return {
+    subject: headline,
+    html: emailShell({ previewText: headline, bodyHtml }),
+    text: `${headline}.\n\n${detail.replace(/<[^>]+>/g, "")}${dashboardUrl ? `\n\n${dashboardUrl}` : ""}`,
+  };
+}
+
 export const FALLBACK_TEMPLATES: Record<string, TemplateRenderer> = {
   "auth.magic_link": authMagicLink,
   "referral.marketer_invite": referralMarketerInvite,
+  "marketplace.proposal_received": marketplaceProposalReceived,
+  "marketplace.request_decision": marketplaceRequestDecision,
 };
