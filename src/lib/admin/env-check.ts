@@ -165,18 +165,28 @@ async function testSupabaseGroup(): Promise<Record<string, TestOutcomeResult>> {
 
   const results: Record<string, TestOutcomeResult> = {};
 
+  // Supabase's edge gateway now requires an `apikey` header on EVERY
+  // request to a project subdomain — including /auth/v1/health, which used
+  // to be a genuinely public, unauthenticated GoTrue endpoint — as part of
+  // the platform-wide rollout of the new sb_publishable_/sb_secret_ key
+  // format this project uses. An unkeyed request gets rejected before it
+  // ever reaches GoTrue, which made this probe report "failed" for a
+  // perfectly fine URL.
   try {
-    const res = await fetch(`${url}/auth/v1/health`);
-    results.NEXT_PUBLIC_SUPABASE_URL = res.ok
-      ? pass("Reachable — Supabase Auth responded.")
-      : fail(`Reachable but returned HTTP ${res.status} — double-check this is the right project URL.`);
+    const res = await fetch(`${url}/auth/v1/health`, publishableKey ? { headers: { apikey: publishableKey, Authorization: `Bearer ${publishableKey}` } } : undefined);
+    results.NEXT_PUBLIC_SUPABASE_URL =
+      res.ok || res.status === 401
+        ? pass("Reachable — Supabase responded.")
+        : fail(`Reachable but returned HTTP ${res.status} — double-check this is the right project URL.`);
   } catch (err) {
     results.NEXT_PUBLIC_SUPABASE_URL = fail(`Could not reach this host: ${err instanceof Error ? err.message : String(err)}`);
   }
 
   if (publishableKey) {
     try {
-      const res = await fetch(`${url}/rest/v1/`, { headers: { apikey: publishableKey } });
+      // Same gateway requirement as above — apikey alone isn't always
+      // enough, Authorization: Bearer must match it too.
+      const res = await fetch(`${url}/rest/v1/`, { headers: { apikey: publishableKey, Authorization: `Bearer ${publishableKey}` } });
       results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
         res.status === 401
           ? fail("Supabase rejected this key (401) — it doesn't match this project.")
