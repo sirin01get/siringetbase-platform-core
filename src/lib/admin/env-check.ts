@@ -179,7 +179,19 @@ async function testSupabaseGroup(): Promise<Record<string, TestOutcomeResult>> {
   // itself is wrong. The response's status then tells us about the key.
   if (publishableKey) {
     try {
-      const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: publishableKey } });
+      // Cache-busting query param + explicit no-store: this call runs
+      // inside Cloudflare's own network calling out to a Supabase project
+      // that's very likely also Cloudflare-fronted, so a plain fetch() to a
+      // fixed URL risks a stale cached response (e.g. an earlier 401 from
+      // before a key rotation) getting served back on every later request
+      // regardless of the apikey header actually sent — HTTP caching
+      // doesn't vary by header unless the origin explicitly opts in. Both
+      // belt-and-suspenders here since which layer might be caching isn't
+      // knowable from this side.
+      const res = await fetch(`${url}/auth/v1/settings?_cb=${Date.now()}`, {
+        headers: { apikey: publishableKey },
+        cache: "no-store",
+      });
       if (res.ok) {
         results.NEXT_PUBLIC_SUPABASE_URL = pass("Reachable — Supabase Auth responded.");
         results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = pass("Supabase accepted this key.");
@@ -205,8 +217,10 @@ async function testSupabaseGroup(): Promise<Record<string, TestOutcomeResult>> {
 
   if (serviceRoleKey) {
     try {
-      const res = await fetch(`${url}/auth/v1/admin/users?per_page=1`, {
+      // Same cache-busting reasoning as the publishable-key probe above.
+      const res = await fetch(`${url}/auth/v1/admin/users?per_page=1&_cb=${Date.now()}`, {
         headers: { apikey: serviceRoleKey, Authorization: `Bearer ${serviceRoleKey}` },
+        cache: "no-store",
       });
       results.SUPABASE_SERVICE_ROLE_KEY = res.ok
         ? pass("Confirmed real service_role privilege — GoTrue's admin API accepted it.")
