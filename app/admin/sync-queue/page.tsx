@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import AdminGate from "@/components/admin/AdminGate";
+import { Badge, Banner, buttonPrimary, buttonSecondary, Card, EmptyState, PageHeader, Spinner, td, th, trBody } from "@/components/admin/AdminUI";
 
 // Minimal admin view over entity_sync_queue rows that need attention —
 // 'dead_letter' (exhausted automatic retries), legacy 'failed', and
@@ -16,7 +17,8 @@ import AdminGate from "@/components/admin/AdminGate";
 //
 // support_admin only (the owner's own naming — see README.md "Access
 // control") — the "other Q [queue] activities" side. Every retry here is
-// audit-logged (see app/api/admin/sync-queue/retry/route.ts).
+// audit-logged (see app/api/admin/sync-queue/retry/route.ts). Tailwind-styled
+// via src/components/admin/AdminUI.tsx, matching this app's other /admin/* pages.
 
 interface QueueRow {
   id: string;
@@ -36,6 +38,12 @@ interface DrainResult {
   retryScheduled: number;
   deadLettered: number;
 }
+
+const statusTone: Record<string, "green" | "red" | "amber" | "slate"> = {
+  dead_letter: "red",
+  failed: "red",
+  pending: "amber",
+};
 
 export default function SyncQueueAdminPage() {
   return (
@@ -120,78 +128,106 @@ function SyncQueueAdminPageInner() {
   }
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "3rem", maxWidth: 960 }}>
-      <h1>Entity Sync Queue — Unsynced Rows</h1>
-      <p>
-        Rows in <code>dead_letter</code> (exhausted automatic retries), legacy <code>failed</code>, or{" "}
-        <code>pending</code> still backing off. Select rows and retry to reset them and immediately drain the
-        queue — see <code>src/lib/entity-graph/sync.ts</code> and{" "}
-        <code>../../entity-graph/data-sync-architecture.md</code> for how automatic retry/backoff normally
-        works.
-      </p>
+    <main className="mx-auto max-w-5xl px-6 py-10">
+      <PageHeader
+        title="Entity sync queue — unsynced rows"
+        description={
+          <>
+            Rows in <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.8em]">dead_letter</code> (exhausted
+            automatic retries), legacy <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.8em]">failed</code>,
+            or <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.8em]">pending</code> still backing off. Select
+            rows and retry to reset them and immediately drain the queue — see{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.8em]">src/lib/entity-graph/sync.ts</code> and{" "}
+            <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.8em]">../../entity-graph/data-sync-architecture.md</code>{" "}
+            for how automatic retry/backoff normally works.
+          </>
+        }
+      />
 
-      <div style={{ margin: "1rem 0", display: "flex", gap: "0.75rem", alignItems: "center" }}>
-        <button onClick={() => void load()} disabled={loading}>
-          {loading ? "Loading…" : "Refresh"}
+      <div className="mb-5 flex flex-wrap items-center gap-3">
+        <button onClick={() => void load()} disabled={loading} className={buttonSecondary}>
+          {loading ? (
+            <span className="flex items-center gap-2">
+              <Spinner /> Loading…
+            </span>
+          ) : (
+            "Refresh"
+          )}
         </button>
-        <button onClick={() => void retrySelected()} disabled={retrying || selected.size === 0}>
-          {retrying ? "Retrying…" : `Retry Selected (${selected.size})`}
+        <button onClick={() => void retrySelected()} disabled={retrying || selected.size === 0} className={buttonPrimary}>
+          {retrying ? (
+            <span className="flex items-center gap-2">
+              <Spinner /> Retrying…
+            </span>
+          ) : (
+            `Retry selected (${selected.size})`
+          )}
         </button>
       </div>
 
-      {loadError && <p style={{ color: "crimson" }}>Error: {loadError}</p>}
+      {loadError && <Banner tone="red" className="mb-5">{loadError}</Banner>}
 
       {lastResult && (
-        <p style={{ background: "#eef7ee", padding: "0.75rem", borderRadius: 4 }}>
+        <Banner tone="green" className="mb-5">
           Requeued {lastResult.requeued} row(s). Drain result: {lastResult.drainResult.processed} processed,{" "}
           {lastResult.drainResult.retryScheduled} rescheduled for retry, {lastResult.drainResult.deadLettered}{" "}
           dead-lettered.
-        </p>
+        </Banner>
       )}
 
-      {!loading && rows.length === 0 && !loadError && <p>Nothing needs attention right now.</p>}
+      {!loading && rows.length === 0 && !loadError && <EmptyState>Nothing needs attention right now.</EmptyState>}
 
       {rows.length > 0 && (
-        <table style={{ borderCollapse: "collapse", width: "100%", fontSize: "0.85rem" }}>
-          <thead>
-            <tr style={{ textAlign: "left", borderBottom: "2px solid #ccc" }}>
-              <th style={{ padding: "0.4rem" }}>
-                <input
-                  type="checkbox"
-                  checked={selected.size === rows.length && rows.length > 0}
-                  onChange={toggleAll}
-                />
-              </th>
-              <th style={{ padding: "0.4rem" }}>Status</th>
-              <th style={{ padding: "0.4rem" }}>Vertical</th>
-              <th style={{ padding: "0.4rem" }}>Role</th>
-              <th style={{ padding: "0.4rem" }}>Attempts</th>
-              <th style={{ padding: "0.4rem" }}>Error</th>
-              <th style={{ padding: "0.4rem" }}>Created</th>
-              <th style={{ padding: "0.4rem" }}>Next attempt</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((row) => (
-              <tr key={row.id} style={{ borderBottom: "1px solid #eee" }}>
-                <td style={{ padding: "0.4rem" }}>
-                  <input type="checkbox" checked={selected.has(row.id)} onChange={() => toggle(row.id)} />
-                </td>
-                <td style={{ padding: "0.4rem" }}>
-                  <code>{row.status}</code>
-                </td>
-                <td style={{ padding: "0.4rem" }}>{row.vertical}</td>
-                <td style={{ padding: "0.4rem" }}>{row.payload?.role ?? "—"}</td>
-                <td style={{ padding: "0.4rem" }}>{row.attempts}</td>
-                <td style={{ padding: "0.4rem", maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {row.error ?? "—"}
-                </td>
-                <td style={{ padding: "0.4rem" }}>{new Date(row.created_at).toLocaleString()}</td>
-                <td style={{ padding: "0.4rem" }}>{new Date(row.next_attempt_at).toLocaleString()}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[860px] border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className={th}>
+                    <input
+                      type="checkbox"
+                      checked={selected.size === rows.length && rows.length > 0}
+                      onChange={toggleAll}
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                    />
+                  </th>
+                  <th className={th}>Status</th>
+                  <th className={th}>Vertical</th>
+                  <th className={th}>Role</th>
+                  <th className={th}>Attempts</th>
+                  <th className={th}>Error</th>
+                  <th className={th}>Created</th>
+                  <th className={th}>Next attempt</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((row) => (
+                  <tr key={row.id} className={trBody}>
+                    <td className={td}>
+                      <input
+                        type="checkbox"
+                        checked={selected.has(row.id)}
+                        onChange={() => toggle(row.id)}
+                        className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+                      />
+                    </td>
+                    <td className={td}>
+                      <Badge tone={statusTone[row.status] ?? "slate"}>{row.status}</Badge>
+                    </td>
+                    <td className={td}>{row.vertical}</td>
+                    <td className={td}>{row.payload?.role ?? "—"}</td>
+                    <td className={td}>{row.attempts}</td>
+                    <td className={`${td} max-w-[280px] truncate text-slate-500`} title={row.error ?? undefined}>
+                      {row.error ?? "—"}
+                    </td>
+                    <td className={`${td} whitespace-nowrap text-slate-500`}>{new Date(row.created_at).toLocaleString()}</td>
+                    <td className={`${td} whitespace-nowrap text-slate-500`}>{new Date(row.next_attempt_at).toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </main>
   );

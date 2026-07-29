@@ -1,7 +1,23 @@
 "use client";
 
-import { useCallback, useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { useCallback, useEffect, useState, type FormEvent } from "react";
 import AdminGate from "@/components/admin/AdminGate";
+import {
+  Badge,
+  Banner,
+  buttonPrimary,
+  Card,
+  EmptyState,
+  hintClass,
+  inputClass,
+  labelClass,
+  PageHeader,
+  SectionHeading,
+  Spinner,
+  td,
+  th,
+  trBody,
+} from "@/components/admin/AdminUI";
 
 interface ChargeRateRow {
   id: string;
@@ -53,7 +69,11 @@ function rowStatus(effectiveFrom: string, effectiveTo: string | null): "schedule
   return "current";
 }
 
-const statusColor: Record<string, string> = { current: "#0a7", scheduled: "#c80", expired: "#999" };
+const statusTone: Record<"current" | "scheduled" | "expired", "green" | "amber" | "slate"> = {
+  current: "green",
+  scheduled: "amber",
+  expired: "slate",
+};
 
 // Billing rate card control plane — ../../billing/README.md,
 // ../../supabase/migrations/0008_billing_rate_cards.sql. Lets an admin
@@ -68,6 +88,8 @@ const statusColor: Record<string, string> = { current: "#0a7", scheduled: "#c80"
 // control") — this manages a real rate now, deducted from every CA's
 // payout across every vertical, so every create here is audit-logged with
 // the full rate/fee detail (see the two API routes this page calls).
+// Tailwind-styled via src/components/admin/AdminUI.tsx, matching this
+// app's other /admin/* pages.
 export default function BillingAdminPage() {
   return (
     <AdminGate allowedRoles={["business_admin"]}>
@@ -241,309 +263,384 @@ function BillingAdminPageInner() {
   }
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "3rem", maxWidth: 960 }}>
-      <h1>Billing — rate card</h1>
-      <p>
-        Manage <strong>Platform charges</strong> (the percentage taken at payout) and the{" "}
-        <strong>platform membership fee</strong> (a fixed, recurring platform-access fee) for every vertical.
-        Changes can be scheduled for a future date — the previously-open rate for the same scope is closed out
-        automatically the moment a new one is saved.
-      </p>
+    <main className="mx-auto max-w-5xl px-6 py-10">
+      <PageHeader
+        title="Billing — rate card"
+        description={
+          <>
+            Manage <strong className="font-semibold text-slate-700">platform charges</strong> (the percentage taken
+            at payout) and the <strong className="font-semibold text-slate-700">platform membership fee</strong> (a
+            fixed, recurring platform-access fee) for every vertical. Changes can be scheduled for a future date —
+            the previously-open rate for the same scope is closed out automatically the moment a new one is saved.
+          </>
+        }
+      />
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {info && <p style={{ color: "seagreen" }}>{info}</p>}
+      {error && <Banner tone="red" className="mb-5">{error}</Banner>}
+      {info && <Banner tone="green" className="mb-5">{info}</Banner>}
 
-      <h2>Platform charges</h2>
-      <form onSubmit={(e) => void createRate(e)} style={formStyle}>
-        <label>
-          Vertical
-          <input value={rateVertical} onChange={(e) => setRateVertical(e.target.value)} style={inputStyle} />
-        </label>
-        <label>
-          Service type <span style={{ fontWeight: 400, color: "#666" }}>(optional — blank applies to all)</span>
-          <input
-            value={rateServiceType}
-            onChange={(e) => setRateServiceType(e.target.value)}
-            placeholder="e.g. gst-filing"
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Rate (%)
-          <input
-            type="number"
-            min="0"
-            max="100"
-            step="0.01"
-            value={ratePercent}
-            onChange={(e) => setRatePercent(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Effective from <span style={{ fontWeight: 400, color: "#666" }}>(blank = now)</span>
-          <input
-            type="datetime-local"
-            value={rateEffectiveFrom}
-            onChange={(e) => setRateEffectiveFrom(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Note
-          <input value={rateNote} onChange={(e) => setRateNote(e.target.value)} style={inputStyle} />
-        </label>
-        <button type="submit" disabled={savingRate}>
-          {savingRate ? "Saving…" : "Schedule rate"}
-        </button>
-      </form>
+      <section className="mb-10">
+        <SectionHeading className="mb-3">Platform charges</SectionHeading>
+        <Card className="mb-5 p-5">
+          <form onSubmit={(e) => void createRate(e)} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <label className={labelClass}>
+              Vertical
+              <input value={rateVertical} onChange={(e) => setRateVertical(e.target.value)} className={`${inputClass} mt-1.5`} />
+            </label>
+            <label className={labelClass}>
+              Service type <span className={hintClass}>(optional — blank applies to all)</span>
+              <input
+                value={rateServiceType}
+                onChange={(e) => setRateServiceType(e.target.value)}
+                placeholder="e.g. gst-filing"
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Rate (%)
+              <input
+                type="number"
+                min="0"
+                max="100"
+                step="0.01"
+                value={ratePercent}
+                onChange={(e) => setRatePercent(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Effective from <span className={hintClass}>(blank = now)</span>
+              <input
+                type="datetime-local"
+                value={rateEffectiveFrom}
+                onChange={(e) => setRateEffectiveFrom(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Note
+              <input value={rateNote} onChange={(e) => setRateNote(e.target.value)} className={`${inputClass} mt-1.5`} />
+            </label>
+            <div className="flex items-end">
+              <button type="submit" disabled={savingRate} className={buttonPrimary}>
+                {savingRate ? (
+                  <span className="flex items-center gap-2">
+                    <Spinner /> Saving…
+                  </span>
+                ) : (
+                  "Schedule rate"
+                )}
+              </button>
+            </div>
+          </form>
+        </Card>
 
-      {loading ? (
-        <p>Loading…</p>
-      ) : chargeRates.length === 0 ? (
-        <p>No platform charge rates set yet — payouts fall back to a hardcoded default until one exists.</p>
-      ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Vertical</th>
-              <th style={cellStyle}>Service type</th>
-              <th style={cellStyle}>Rate</th>
-              <th style={cellStyle}>Effective from</th>
-              <th style={cellStyle}>Effective to</th>
-              <th style={cellStyle}>Status</th>
-              <th style={cellStyle}>Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {chargeRates.map((r) => {
-              const status = rowStatus(r.effective_from, r.effective_to);
-              return (
-                <tr key={r.id}>
-                  <td style={cellStyle}>{r.vertical}</td>
-                  <td style={cellStyle}>{r.service_type_slug ?? "all"}</td>
-                  <td style={cellStyle}>{(r.rate * 100).toFixed(2)}%</td>
-                  <td style={cellStyle}>{new Date(r.effective_from).toLocaleString()}</td>
-                  <td style={cellStyle}>{r.effective_to ? new Date(r.effective_to).toLocaleString() : "open"}</td>
-                  <td style={{ ...cellStyle, color: statusColor[status], fontWeight: 600 }}>{status}</td>
-                  <td style={cellStyle}>{r.note ?? "—"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+        {loading ? (
+          <EmptyState>Loading…</EmptyState>
+        ) : chargeRates.length === 0 ? (
+          <EmptyState>No platform charge rates set yet — payouts fall back to a hardcoded default until one exists.</EmptyState>
+        ) : (
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className={th}>Vertical</th>
+                    <th className={th}>Service type</th>
+                    <th className={th}>Rate</th>
+                    <th className={th}>Effective from</th>
+                    <th className={th}>Effective to</th>
+                    <th className={th}>Status</th>
+                    <th className={th}>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {chargeRates.map((r) => {
+                    const status = rowStatus(r.effective_from, r.effective_to);
+                    return (
+                      <tr key={r.id} className={trBody}>
+                        <td className={td}>{r.vertical}</td>
+                        <td className={td}>{r.service_type_slug ?? "all"}</td>
+                        <td className={`${td} font-medium text-slate-900`}>{(r.rate * 100).toFixed(2)}%</td>
+                        <td className={`${td} whitespace-nowrap text-slate-500`}>{new Date(r.effective_from).toLocaleString()}</td>
+                        <td className={`${td} whitespace-nowrap text-slate-500`}>
+                          {r.effective_to ? new Date(r.effective_to).toLocaleString() : "open"}
+                        </td>
+                        <td className={td}>
+                          <Badge tone={statusTone[status]}>{status}</Badge>
+                        </td>
+                        <td className={`${td} text-slate-500`}>{r.note ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </section>
 
-      <h2 style={{ marginTop: "2.5rem" }}>Platform membership fee</h2>
-      <form onSubmit={(e) => void createFee(e)} style={formStyle}>
-        <label>
-          Vertical
-          <input value={feeVertical} onChange={(e) => setFeeVertical(e.target.value)} style={inputStyle} />
-        </label>
-        <label>
-          Role
-          <input value={feeRole} onChange={(e) => setFeeRole(e.target.value)} placeholder="e.g. ca" style={inputStyle} />
-        </label>
-        <label>
-          Amount (INR)
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={feeAmount}
-            onChange={(e) => setFeeAmount(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Billing cycle
-          <select value={feeCycle} onChange={(e) => setFeeCycle(e.target.value as typeof feeCycle)} style={inputStyle}>
-            <option value="monthly">Monthly</option>
-            <option value="quarterly">Quarterly</option>
-            <option value="annual">Annual</option>
-          </select>
-        </label>
-        <label>
-          Effective from <span style={{ fontWeight: 400, color: "#666" }}>(blank = now)</span>
-          <input
-            type="datetime-local"
-            value={feeEffectiveFrom}
-            onChange={(e) => setFeeEffectiveFrom(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Note
-          <input value={feeNote} onChange={(e) => setFeeNote(e.target.value)} style={inputStyle} />
-        </label>
-        <button type="submit" disabled={savingFee}>
-          {savingFee ? "Saving…" : "Schedule fee"}
-        </button>
-      </form>
+      <section className="mb-10">
+        <SectionHeading className="mb-3">Platform membership fee</SectionHeading>
+        <Card className="mb-5 p-5">
+          <form onSubmit={(e) => void createFee(e)} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <label className={labelClass}>
+              Vertical
+              <input value={feeVertical} onChange={(e) => setFeeVertical(e.target.value)} className={`${inputClass} mt-1.5`} />
+            </label>
+            <label className={labelClass}>
+              Role
+              <input value={feeRole} onChange={(e) => setFeeRole(e.target.value)} placeholder="e.g. ca" className={`${inputClass} mt-1.5`} />
+            </label>
+            <label className={labelClass}>
+              Amount (INR)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={feeAmount}
+                onChange={(e) => setFeeAmount(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Billing cycle
+              <select
+                value={feeCycle}
+                onChange={(e) => setFeeCycle(e.target.value as typeof feeCycle)}
+                className={`${inputClass} mt-1.5`}
+              >
+                <option value="monthly">Monthly</option>
+                <option value="quarterly">Quarterly</option>
+                <option value="annual">Annual</option>
+              </select>
+            </label>
+            <label className={labelClass}>
+              Effective from <span className={hintClass}>(blank = now)</span>
+              <input
+                type="datetime-local"
+                value={feeEffectiveFrom}
+                onChange={(e) => setFeeEffectiveFrom(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Note
+              <input value={feeNote} onChange={(e) => setFeeNote(e.target.value)} className={`${inputClass} mt-1.5`} />
+            </label>
+            <div className="flex items-end">
+              <button type="submit" disabled={savingFee} className={buttonPrimary}>
+                {savingFee ? (
+                  <span className="flex items-center gap-2">
+                    <Spinner /> Saving…
+                  </span>
+                ) : (
+                  "Schedule fee"
+                )}
+              </button>
+            </div>
+          </form>
+        </Card>
 
-      {!loading && membershipFees.length === 0 ? (
-        <p>No platform membership fees set yet — none are being collected regardless, see the note above.</p>
-      ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Vertical</th>
-              <th style={cellStyle}>Role</th>
-              <th style={cellStyle}>Amount</th>
-              <th style={cellStyle}>Cycle</th>
-              <th style={cellStyle}>Effective from</th>
-              <th style={cellStyle}>Effective to</th>
-              <th style={cellStyle}>Status</th>
-              <th style={cellStyle}>Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {membershipFees.map((f) => {
-              const status = rowStatus(f.effective_from, f.effective_to);
-              return (
-                <tr key={f.id}>
-                  <td style={cellStyle}>{f.vertical}</td>
-                  <td style={cellStyle}>{f.role}</td>
-                  <td style={cellStyle}>₹{f.amount}</td>
-                  <td style={cellStyle}>{f.billing_cycle}</td>
-                  <td style={cellStyle}>{new Date(f.effective_from).toLocaleString()}</td>
-                  <td style={cellStyle}>{f.effective_to ? new Date(f.effective_to).toLocaleString() : "open"}</td>
-                  <td style={{ ...cellStyle, color: statusColor[status], fontWeight: 600 }}>{status}</td>
-                  <td style={cellStyle}>{f.note ?? "—"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+        {!loading && membershipFees.length === 0 ? (
+          <EmptyState>No platform membership fees set yet — none are being collected regardless, see the note above.</EmptyState>
+        ) : (
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[760px] border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className={th}>Vertical</th>
+                    <th className={th}>Role</th>
+                    <th className={th}>Amount</th>
+                    <th className={th}>Cycle</th>
+                    <th className={th}>Effective from</th>
+                    <th className={th}>Effective to</th>
+                    <th className={th}>Status</th>
+                    <th className={th}>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {membershipFees.map((f) => {
+                    const status = rowStatus(f.effective_from, f.effective_to);
+                    return (
+                      <tr key={f.id} className={trBody}>
+                        <td className={td}>{f.vertical}</td>
+                        <td className={td}>{f.role}</td>
+                        <td className={`${td} font-medium text-slate-900`}>₹{f.amount}</td>
+                        <td className={td}>{f.billing_cycle}</td>
+                        <td className={`${td} whitespace-nowrap text-slate-500`}>{new Date(f.effective_from).toLocaleString()}</td>
+                        <td className={`${td} whitespace-nowrap text-slate-500`}>
+                          {f.effective_to ? new Date(f.effective_to).toLocaleString() : "open"}
+                        </td>
+                        <td className={td}>
+                          <Badge tone={statusTone[status]}>{status}</Badge>
+                        </td>
+                        <td className={`${td} text-slate-500`}>{f.note ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </section>
 
-      <h2 style={{ marginTop: "2.5rem" }}>Module subscription plans</h2>
-      <p>
-        Recurring, per-module tiers for subscription-monetized service types (e.g. cafocus&apos;s Client management /
-        Document storage / Automated reminders — see that vertical&apos;s <code>service_types.monetization_model</code>).
-        A CA subscribing to a released module picks one of these tiers; <code>included_usage_quota</code> +{" "}
-        <code>overage_unit_rate</code> are optional and only matter for a module that meters usage — leave both blank
-        for a flat monthly fee.
-      </p>
-      <form onSubmit={(e) => void createPlan(e)} style={formStyle}>
-        <label>
-          Vertical
-          <input value={planVertical} onChange={(e) => setPlanVertical(e.target.value)} style={inputStyle} />
-        </label>
-        <label>
-          Service type
-          <input
-            value={planServiceType}
-            onChange={(e) => setPlanServiceType(e.target.value)}
-            placeholder="e.g. document-storage"
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Tier
-          <input value={planTier} onChange={(e) => setPlanTier(e.target.value)} placeholder="e.g. basic" style={inputStyle} />
-        </label>
-        <label>
-          Amount / month (INR)
-          <input
-            type="number"
-            min="0"
-            step="0.01"
-            value={planAmount}
-            onChange={(e) => setPlanAmount(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Included usage quota <span style={{ fontWeight: 400, color: "#666" }}>(optional)</span>
-          <input type="number" min="0" value={planQuota} onChange={(e) => setPlanQuota(e.target.value)} style={inputStyle} />
-        </label>
-        <label>
-          Overage rate/unit <span style={{ fontWeight: 400, color: "#666" }}>(optional, cost-plus above quota)</span>
-          <input
-            type="number"
-            min="0"
-            step="0.0001"
-            value={planOverageRate}
-            onChange={(e) => setPlanOverageRate(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Usage unit label <span style={{ fontWeight: 400, color: "#666" }}>(optional, e.g. &quot;client&quot;)</span>
-          <input value={planUsageUnitLabel} onChange={(e) => setPlanUsageUnitLabel(e.target.value)} style={inputStyle} />
-        </label>
-        <label>
-          Effective from <span style={{ fontWeight: 400, color: "#666" }}>(blank = now)</span>
-          <input
-            type="datetime-local"
-            value={planEffectiveFrom}
-            onChange={(e) => setPlanEffectiveFrom(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Note
-          <input value={planNote} onChange={(e) => setPlanNote(e.target.value)} style={inputStyle} />
-        </label>
-        <button type="submit" disabled={savingPlan}>
-          {savingPlan ? "Saving…" : "Schedule plan"}
-        </button>
-      </form>
+      <section>
+        <SectionHeading
+          className="mb-3"
+          subtitle={
+            <>
+              Recurring, per-module tiers for subscription-monetized service types (e.g. cafocus&apos;s Client
+              management / Document storage / Automated reminders — see that vertical&apos;s{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">service_types.monetization_model</code>
+              ). A CA subscribing to a released module picks one of these tiers;{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">included_usage_quota</code> +{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">overage_unit_rate</code> are optional
+              and only matter for a module that meters usage — leave both blank for a flat monthly fee.
+            </>
+          }
+        >
+          Module subscription plans
+        </SectionHeading>
+        <Card className="mb-5 mt-3 p-5">
+          <form onSubmit={(e) => void createPlan(e)} className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            <label className={labelClass}>
+              Vertical
+              <input value={planVertical} onChange={(e) => setPlanVertical(e.target.value)} className={`${inputClass} mt-1.5`} />
+            </label>
+            <label className={labelClass}>
+              Service type
+              <input
+                value={planServiceType}
+                onChange={(e) => setPlanServiceType(e.target.value)}
+                placeholder="e.g. document-storage"
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Tier
+              <input value={planTier} onChange={(e) => setPlanTier(e.target.value)} placeholder="e.g. basic" className={`${inputClass} mt-1.5`} />
+            </label>
+            <label className={labelClass}>
+              Amount / month (INR)
+              <input
+                type="number"
+                min="0"
+                step="0.01"
+                value={planAmount}
+                onChange={(e) => setPlanAmount(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Included usage quota <span className={hintClass}>(optional)</span>
+              <input
+                type="number"
+                min="0"
+                value={planQuota}
+                onChange={(e) => setPlanQuota(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Overage rate/unit <span className={hintClass}>(optional, cost-plus above quota)</span>
+              <input
+                type="number"
+                min="0"
+                step="0.0001"
+                value={planOverageRate}
+                onChange={(e) => setPlanOverageRate(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Usage unit label <span className={hintClass}>(optional, e.g. &quot;client&quot;)</span>
+              <input
+                value={planUsageUnitLabel}
+                onChange={(e) => setPlanUsageUnitLabel(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Effective from <span className={hintClass}>(blank = now)</span>
+              <input
+                type="datetime-local"
+                value={planEffectiveFrom}
+                onChange={(e) => setPlanEffectiveFrom(e.target.value)}
+                className={`${inputClass} mt-1.5`}
+              />
+            </label>
+            <label className={labelClass}>
+              Note
+              <input value={planNote} onChange={(e) => setPlanNote(e.target.value)} className={`${inputClass} mt-1.5`} />
+            </label>
+            <div className="flex items-end">
+              <button type="submit" disabled={savingPlan} className={buttonPrimary}>
+                {savingPlan ? (
+                  <span className="flex items-center gap-2">
+                    <Spinner /> Saving…
+                  </span>
+                ) : (
+                  "Schedule plan"
+                )}
+              </button>
+            </div>
+          </form>
+        </Card>
 
-      {!loading && subscriptionPlans.length === 0 ? (
-        <p>No module subscription plans set yet — nothing is releasable for CAs to subscribe to until one exists.</p>
-      ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Vertical</th>
-              <th style={cellStyle}>Service type</th>
-              <th style={cellStyle}>Tier</th>
-              <th style={cellStyle}>Amount/mo</th>
-              <th style={cellStyle}>Quota</th>
-              <th style={cellStyle}>Overage rate</th>
-              <th style={cellStyle}>Effective from</th>
-              <th style={cellStyle}>Effective to</th>
-              <th style={cellStyle}>Status</th>
-              <th style={cellStyle}>Note</th>
-            </tr>
-          </thead>
-          <tbody>
-            {subscriptionPlans.map((p) => {
-              const status = rowStatus(p.effective_from, p.effective_to);
-              return (
-                <tr key={p.id}>
-                  <td style={cellStyle}>{p.vertical}</td>
-                  <td style={cellStyle}>{p.service_type_slug}</td>
-                  <td style={cellStyle}>{p.tier}</td>
-                  <td style={cellStyle}>₹{p.amount}</td>
-                  <td style={cellStyle}>{p.included_usage_quota ?? "—"}{p.usage_unit_label ? ` ${p.usage_unit_label}` : ""}</td>
-                  <td style={cellStyle}>{p.overage_unit_rate != null ? `₹${p.overage_unit_rate}` : "—"}</td>
-                  <td style={cellStyle}>{new Date(p.effective_from).toLocaleString()}</td>
-                  <td style={cellStyle}>{p.effective_to ? new Date(p.effective_to).toLocaleString() : "open"}</td>
-                  <td style={{ ...cellStyle, color: statusColor[status], fontWeight: 600 }}>{status}</td>
-                  <td style={cellStyle}>{p.note ?? "—"}</td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      )}
+        {!loading && subscriptionPlans.length === 0 ? (
+          <EmptyState>No module subscription plans set yet — nothing is releasable for CAs to subscribe to until one exists.</EmptyState>
+        ) : (
+          <Card className="overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[920px] border-collapse text-sm">
+                <thead>
+                  <tr className="bg-slate-50">
+                    <th className={th}>Vertical</th>
+                    <th className={th}>Service type</th>
+                    <th className={th}>Tier</th>
+                    <th className={th}>Amount/mo</th>
+                    <th className={th}>Quota</th>
+                    <th className={th}>Overage rate</th>
+                    <th className={th}>Effective from</th>
+                    <th className={th}>Effective to</th>
+                    <th className={th}>Status</th>
+                    <th className={th}>Note</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {subscriptionPlans.map((p) => {
+                    const status = rowStatus(p.effective_from, p.effective_to);
+                    return (
+                      <tr key={p.id} className={trBody}>
+                        <td className={td}>{p.vertical}</td>
+                        <td className={td}>{p.service_type_slug}</td>
+                        <td className={td}>{p.tier}</td>
+                        <td className={`${td} font-medium text-slate-900`}>₹{p.amount}</td>
+                        <td className={td}>
+                          {p.included_usage_quota ?? "—"}
+                          {p.usage_unit_label ? ` ${p.usage_unit_label}` : ""}
+                        </td>
+                        <td className={td}>{p.overage_unit_rate != null ? `₹${p.overage_unit_rate}` : "—"}</td>
+                        <td className={`${td} whitespace-nowrap text-slate-500`}>{new Date(p.effective_from).toLocaleString()}</td>
+                        <td className={`${td} whitespace-nowrap text-slate-500`}>
+                          {p.effective_to ? new Date(p.effective_to).toLocaleString() : "open"}
+                        </td>
+                        <td className={td}>
+                          <Badge tone={statusTone[status]}>{status}</Badge>
+                        </td>
+                        <td className={`${td} text-slate-500`}>{p.note ?? "—"}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </Card>
+        )}
+      </section>
     </main>
   );
 }
-
-const formStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
-  gap: "0.75rem",
-  alignItems: "end",
-  margin: "1rem 0 1.5rem",
-  padding: "1rem",
-  border: "1px solid #ddd",
-  borderRadius: 8,
-};
-const inputStyle: CSSProperties = { display: "block", width: "100%", padding: "0.4rem", marginTop: "0.25rem" };
-const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" };
-const cellStyle: CSSProperties = { border: "1px solid #ddd", padding: "0.4rem", textAlign: "left" };

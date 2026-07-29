@@ -2,6 +2,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { Spinner } from "./AdminUI";
 
 export type AdminRole = "business_admin" | "support_admin";
 
@@ -19,12 +20,10 @@ const ROLE_LABEL: Record<AdminRole, string> = {
   support_admin: "Support admin",
 };
 
-// Client-side gate for this app's /admin/* pages (billing, sync-queue) —
-// mirrors cafocus/app's src/components/admin/AdminGate.tsx exactly (same
-// GET /api/admin/whoami shape, same requireAdmin() backing it). Plain
-// inline styles rather than Tailwind classes, matching this app's existing
-// admin pages (billing/page.tsx, sync-queue/page.tsx were never built
-// against the design-system component library cafocus/app uses).
+// Client-side gate for this app's /admin/* pages — mirrors cafocus/app's
+// src/components/admin/AdminGate.tsx exactly (same GET /api/admin/whoami
+// shape, same requireAdmin() backing it). Tailwind-styled (see ./AdminUI.tsx)
+// to match the rest of this app's now-polished /admin/* surface.
 export default function AdminGate({
   allowedRoles,
   children,
@@ -81,54 +80,59 @@ export default function AdminGate({
 
   if (state.status === "checking" || state.status === "signed_out") {
     return (
-      <main style={{ fontFamily: "system-ui, sans-serif", padding: "3rem" }}>
-        <p>Checking your admin session…</p>
+      <main className="flex min-h-screen items-center justify-center bg-slate-50">
+        <div className="flex items-center gap-2.5 text-sm text-slate-500">
+          <Spinner />
+          Checking your admin session…
+        </div>
       </main>
     );
   }
 
   if (state.status === "wrong_role") {
     return (
-      <main style={{ fontFamily: "system-ui, sans-serif", padding: "3rem", maxWidth: 480 }}>
-        <p style={{ color: "crimson" }}>
-          Signed in as {state.admin.email ?? "an admin"} ({ROLE_LABEL[state.admin.role]}) — this page needs{" "}
-          {(allowedRoles ?? []).map((r) => ROLE_LABEL[r]).join(" or ")}.
-        </p>
-        <a href="/admin/billing">Try billing</a> · <a href="/admin/sync-queue">Try sync queue</a>
+      <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4">
+        <div className="w-full max-w-md rounded-xl border border-rose-100 bg-white p-6 shadow-sm">
+          <p className="text-sm text-rose-700">
+            Signed in as <strong className="font-medium">{state.admin.email ?? "an admin"}</strong> (
+            {ROLE_LABEL[state.admin.role]}) — this page needs{" "}
+            {(allowedRoles ?? []).map((r) => ROLE_LABEL[r]).join(" or ")}.
+          </p>
+          <div className="mt-4 flex gap-4 text-sm font-medium text-slate-600">
+            <a href="/admin/billing" className="hover:text-slate-900 hover:underline">
+              Try billing
+            </a>
+            <a href="/admin/sync-queue" className="hover:text-slate-900 hover:underline">
+              Try sync queue
+            </a>
+          </div>
+        </div>
       </main>
     );
   }
 
   return (
-    <>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: "0.75rem",
-          background: "#111827",
-          color: "#d1d5db",
-          padding: "0.5rem 1.5rem",
-          fontSize: "0.8rem",
-          fontFamily: "system-ui, sans-serif",
-        }}
-      >
+    <div className="min-h-screen bg-slate-50">
+      <div className="flex items-center justify-between gap-3 bg-slate-900 px-6 py-2 text-xs text-slate-300">
         <span>
-          Signed in as <strong style={{ color: "#fff" }}>{state.admin.email ?? "—"}</strong> · {ROLE_LABEL[state.admin.role]}
+          Signed in as <strong className="font-semibold text-white">{state.admin.email ?? "—"}</strong> ·{" "}
+          {ROLE_LABEL[state.admin.role]}
           {state.admin.otherActiveRoles.length > 0 && (
-            <span style={{ color: "#9ca3af" }}> (also: {state.admin.otherActiveRoles.map((r) => ROLE_LABEL[r]).join(", ")})</span>
+            <span className="text-slate-400">
+              {" "}
+              (also: {state.admin.otherActiveRoles.map((r) => ROLE_LABEL[r]).join(", ")})
+            </span>
           )}
         </span>
         <button
           type="button"
           onClick={() => void signOut()}
-          style={{ background: "none", border: "none", color: "#d1d5db", cursor: "pointer", textDecoration: "underline", fontSize: "0.8rem" }}
+          className="text-slate-300 underline decoration-slate-600 underline-offset-2 transition hover:text-white"
         >
           Sign out
         </button>
       </div>
       {children(state.admin)}
-    </>
+    </div>
   );
 }

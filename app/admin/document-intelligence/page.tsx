@@ -1,7 +1,24 @@
 "use client";
 
-import { Fragment, useCallback, useEffect, useState, type CSSProperties, type FormEvent } from "react";
+import { Fragment, useCallback, useEffect, useState, type FormEvent } from "react";
 import AdminGate from "@/components/admin/AdminGate";
+import {
+  Badge,
+  Banner,
+  buttonPrimary,
+  buttonSecondary,
+  Card,
+  EmptyState,
+  hintClass,
+  inputClass,
+  labelClass,
+  PageHeader,
+  SectionHeading,
+  Spinner,
+  td,
+  th,
+  trBody,
+} from "@/components/admin/AdminUI";
 
 interface TemplateRow {
   id: string;
@@ -51,7 +68,8 @@ const DEFAULT_SCHEMA = '{\n  "type": "object",\n  "required": [],\n  "properties
 // This is the piece a business_admin needs BEFORE releasing a new service
 // type whose documents don't already have a registered template — see
 // cafocus/app's /admin/service-types page, which links here and shows
-// which document types are already covered.
+// which document types are already covered. Tailwind-styled via
+// src/components/admin/AdminUI.tsx, matching this app's other /admin/* pages.
 export default function DocumentIntelligenceAdminPage() {
   return (
     <AdminGate allowedRoles={["business_admin"]}>
@@ -240,243 +258,268 @@ function DocumentIntelligenceAdminPageInner() {
   }
 
   return (
-    <main style={{ fontFamily: "system-ui, sans-serif", padding: "3rem", maxWidth: 960 }}>
-      <h1>Document intelligence — extraction templates</h1>
-      <p>
-        A document is only parsed by the AI model if a template is registered here for its exact{" "}
-        <code>document_type</code> + <code>vertical</code>. Without one, upload still works — the document is just
-        stored, never read. Every template here should have <code>requires_human_review</code> on unless you&apos;re
-        confident enough in a document type to skip a CA&apos;s review of what the model extracted.
-      </p>
-      <p>
-        <strong>Max output tokens</strong> caps how long the model&apos;s response can get before it&apos;s cut off.
-        Set it too low for a document type whose schema can produce a lot of output (an open-ended array, especially
-        — this is exactly what happened to AIS: its <code>entries</code> array is unbounded, unlike every other
-        template&apos;s fixed handful of fields) and the response gets truncated mid-JSON, which then fails to parse
-        even after cleanup — surfaces to the person reviewing it as &ldquo;Model output wasn&apos;t valid
-        JSON.&rdquo; Kept per-template rather than one global setting, since output size is really a property of the
-        document type&apos;s schema, not the pipeline. It&apos;s also deliberately provider-agnostic — see{" "}
-        <code>src/lib/document-intelligence/model-gateway.ts</code>&apos;s header comment — so this value still means
-        the same thing if a second AI provider is ever wired in alongside Workers AI; only the exact token count
-        would need retuning per provider, since tokenizers differ.
-      </p>
+    <main className="mx-auto max-w-5xl px-6 py-10">
+      <PageHeader
+        title="Document intelligence — extraction templates"
+        description={
+          <>
+            <p>
+              A document is only parsed by the AI model if a template is registered here for its exact{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">document_type</code> +{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">vertical</code>. Without one, upload
+              still works — the document is just stored, never read. Every template here should have{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">requires_human_review</code> on unless
+              you&apos;re confident enough in a document type to skip a CA&apos;s review of what the model extracted.
+            </p>
+            <p className="mt-2">
+              <strong className="font-semibold text-slate-700">Max output tokens</strong> caps how long the
+              model&apos;s response can get before it&apos;s cut off. Set it too low for a document type whose schema
+              can produce a lot of output (an open-ended array, especially — this is exactly what happened to AIS:
+              its <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">entries</code> array is unbounded,
+              unlike every other template&apos;s fixed handful of fields) and the response gets truncated mid-JSON,
+              which then fails to parse even after cleanup — surfaces to the person reviewing it as &ldquo;Model
+              output wasn&apos;t valid JSON.&rdquo; Kept per-template rather than one global setting, since output
+              size is really a property of the document type&apos;s schema, not the pipeline. It&apos;s also
+              deliberately provider-agnostic — see{" "}
+              <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">src/lib/document-intelligence/model-gateway.ts</code>
+              &apos;s header comment — so this value still means the same thing if a second AI provider is ever wired
+              in alongside Workers AI; only the exact token count would need retuning per provider, since tokenizers
+              differ.
+            </p>
+          </>
+        }
+      />
 
-      {error && <p style={{ color: "crimson" }}>{error}</p>}
-      {info && <p style={{ color: "seagreen" }}>{info}</p>}
+      {error && <Banner tone="red" className="mb-5">{error}</Banner>}
+      {info && <Banner tone="green" className="mb-5">{info}</Banner>}
 
       {alertContext && (
-        <div style={{ border: "1px solid #f0c36d", background: "#fff8e6", borderRadius: 8, padding: "0.9rem 1rem", margin: "1rem 0" }}>
-          <p style={{ margin: "0 0 0.4rem", fontWeight: 600 }}>
-            Draft-apply context from an approved ITR gov-change alert
-          </p>
-          <p style={{ margin: 0, whiteSpace: "pre-wrap", fontSize: "0.9rem" }}>{alertContext}</p>
-          <p style={{ margin: "0.5rem 0 0", fontSize: "0.85rem", color: "#7a5c00" }}>
+        <Banner tone="amber" className="mb-5">
+          <p className="font-semibold">Draft-apply context from an approved ITR gov-change alert</p>
+          <p className="mt-1.5 whitespace-pre-wrap">{alertContext}</p>
+          <p className="mt-2 text-xs text-amber-700/80">
             This is the alert&apos;s own summary/excerpt, shown for context only — the prompt and output schema below
             still need your own judgment about what the model should actually extract, not a copy of this text.
           </p>
-        </div>
+        </Banner>
       )}
 
-      <h2>Add or replace a template</h2>
-      <form onSubmit={(e) => void handleSave(e)} style={formStyle}>
-        <label>
-          Document type
-          <input
-            value={documentType}
-            onChange={(e) => setDocumentType(e.target.value)}
-            placeholder="e.g. form16, tds_challan"
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Vertical
-          <input value={vertical} onChange={(e) => setVertical(e.target.value)} style={inputStyle} />
-        </label>
-        <label>
-          Owning module
-          <input
-            value={owningModule}
-            onChange={(e) => setOwningModule(e.target.value)}
-            placeholder="e.g. cafocus/individual"
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Confidence threshold
-          <input
-            type="number"
-            min="0"
-            max="1"
-            step="0.05"
-            value={confidenceThreshold}
-            onChange={(e) => setConfidenceThreshold(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label>
-          Max output tokens{" "}
-          <span style={{ fontWeight: 400, color: "#666" }} title="How much of a response the model is allowed to generate before it gets cut off. Too low silently truncates the response mid-JSON, which then fails to parse — this is what happened to a real AIS extraction (its 'entries' array is open-ended, unlike every other template's fixed handful of fields). Workers AI's own default is 256, which is why this exists at all.">
-            (?)
-          </span>
-          <input
-            type="number"
-            min="256"
-            max="32000"
-            step="256"
-            value={maxTokens}
-            onChange={(e) => setMaxTokens(e.target.value)}
-            style={inputStyle}
-          />
-        </label>
-        <label style={{ display: "flex", alignItems: "center", gap: "0.5rem", gridColumn: "1 / -1" }}>
-          <input
-            type="checkbox"
-            checked={requiresHumanReview}
-            onChange={(e) => setRequiresHumanReview(e.target.checked)}
-          />
-          Requires human (CA) review before the extracted data is trusted
-        </label>
-        <label style={{ gridColumn: "1 / -1" }}>
-          Prompt <span style={{ fontWeight: 400, color: "#666" }}>(instructions to the vision model)</span>
-          <textarea
-            value={prompt}
-            onChange={(e) => setPrompt(e.target.value)}
-            rows={3}
-            style={{ ...inputStyle, fontFamily: "inherit" }}
-          />
-        </label>
-        <label style={{ gridColumn: "1 / -1" }}>
-          Output schema <span style={{ fontWeight: 400, color: "#666" }}>(JSON — the shape the model must return)</span>
-          <textarea
-            value={outputSchema}
-            onChange={(e) => setOutputSchema(e.target.value)}
-            rows={8}
-            style={{ ...inputStyle, fontFamily: "monospace", fontSize: "0.85rem" }}
-          />
-        </label>
-        <label style={{ gridColumn: "1 / -1" }}>
-          Change reason{" "}
-          <span style={{ fontWeight: 400, color: "#666" }}>
-            (optional — recorded on this edit&apos;s version snapshot, e.g. why this replaced the previous prompt)
-          </span>
-          <input
-            value={changeReason}
-            onChange={(e) => setChangeReason(e.target.value)}
-            placeholder="e.g. Draft-applied from itr_gov_change_alerts <id>"
-            style={inputStyle}
-          />
-        </label>
-        <button type="submit" disabled={saving} style={{ gridColumn: "1 / -1", justifySelf: "start" }}>
-          {saving ? "Saving…" : "Save template"}
-        </button>
-      </form>
+      <SectionHeading className="mb-3">Add or replace a template</SectionHeading>
+      <Card className="mb-8 p-5">
+        <form onSubmit={(e) => void handleSave(e)} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          <label className={labelClass}>
+            Document type
+            <input
+              value={documentType}
+              onChange={(e) => setDocumentType(e.target.value)}
+              placeholder="e.g. form16, tds_challan"
+              className={`${inputClass} mt-1.5`}
+            />
+          </label>
+          <label className={labelClass}>
+            Vertical
+            <input value={vertical} onChange={(e) => setVertical(e.target.value)} className={`${inputClass} mt-1.5`} />
+          </label>
+          <label className={labelClass}>
+            Owning module
+            <input
+              value={owningModule}
+              onChange={(e) => setOwningModule(e.target.value)}
+              placeholder="e.g. cafocus/individual"
+              className={`${inputClass} mt-1.5`}
+            />
+          </label>
+          <label className={labelClass}>
+            Confidence threshold
+            <input
+              type="number"
+              min="0"
+              max="1"
+              step="0.05"
+              value={confidenceThreshold}
+              onChange={(e) => setConfidenceThreshold(e.target.value)}
+              className={`${inputClass} mt-1.5`}
+            />
+          </label>
+          <label className={labelClass}>
+            Max output tokens{" "}
+            <span
+              className={`${hintClass} cursor-help underline decoration-dotted`}
+              title="How much of a response the model is allowed to generate before it gets cut off. Too low silently truncates the response mid-JSON, which then fails to parse — this is what happened to a real AIS extraction (its 'entries' array is open-ended, unlike every other template's fixed handful of fields). Workers AI's own default is 256, which is why this exists at all."
+            >
+              (?)
+            </span>
+            <input
+              type="number"
+              min="256"
+              max="32000"
+              step="256"
+              value={maxTokens}
+              onChange={(e) => setMaxTokens(e.target.value)}
+              className={`${inputClass} mt-1.5`}
+            />
+          </label>
+          <label className="flex items-center gap-2 self-end pb-2 text-sm text-slate-700 sm:col-span-2">
+            <input
+              type="checkbox"
+              checked={requiresHumanReview}
+              onChange={(e) => setRequiresHumanReview(e.target.checked)}
+              className="h-4 w-4 rounded border-slate-300 text-slate-900 focus:ring-slate-400"
+            />
+            Requires human (CA) review before the extracted data is trusted
+          </label>
+          <label className={`${labelClass} sm:col-span-2`}>
+            Prompt <span className={hintClass}>(instructions to the vision model)</span>
+            <textarea
+              value={prompt}
+              onChange={(e) => setPrompt(e.target.value)}
+              rows={3}
+              className={`${inputClass} mt-1.5 font-sans`}
+            />
+          </label>
+          <label className={`${labelClass} sm:col-span-2`}>
+            Output schema <span className={hintClass}>(JSON — the shape the model must return)</span>
+            <textarea
+              value={outputSchema}
+              onChange={(e) => setOutputSchema(e.target.value)}
+              rows={8}
+              className={`${inputClass} mt-1.5 font-mono text-[0.85em]`}
+            />
+          </label>
+          <label className={`${labelClass} sm:col-span-2`}>
+            Change reason{" "}
+            <span className={hintClass}>
+              (optional — recorded on this edit&apos;s version snapshot, e.g. why this replaced the previous prompt)
+            </span>
+            <input
+              value={changeReason}
+              onChange={(e) => setChangeReason(e.target.value)}
+              placeholder="e.g. Draft-applied from itr_gov_change_alerts <id>"
+              className={`${inputClass} mt-1.5`}
+            />
+          </label>
+          <div className="sm:col-span-2">
+            <button type="submit" disabled={saving} className={buttonPrimary}>
+              {saving ? (
+                <span className="flex items-center gap-2">
+                  <Spinner /> Saving…
+                </span>
+              ) : (
+                "Save template"
+              )}
+            </button>
+          </div>
+        </form>
+      </Card>
 
       {loading ? (
-        <p>Loading…</p>
+        <EmptyState>Loading…</EmptyState>
       ) : rows.length === 0 ? (
-        <p>No extraction templates registered yet — every document upload is being stored but not parsed.</p>
+        <EmptyState>No extraction templates registered yet — every document upload is being stored but not parsed.</EmptyState>
       ) : (
-        <table style={tableStyle}>
-          <thead>
-            <tr>
-              <th style={cellStyle}>Document type</th>
-              <th style={cellStyle}>Vertical</th>
-              <th style={cellStyle}>Owning module</th>
-              <th style={cellStyle}>Confidence threshold</th>
-              <th style={cellStyle}>Max tokens</th>
-              <th style={cellStyle}>Human review</th>
-              <th style={cellStyle}>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r) => (
-              <Fragment key={r.id}>
-                <tr>
-                  <td style={cellStyle}>{r.documentType}</td>
-                  <td style={cellStyle}>{r.vertical}</td>
-                  <td style={cellStyle}>{r.owningModule}</td>
-                  <td style={cellStyle}>{r.confidenceThreshold}</td>
-                  <td style={cellStyle}>{r.maxTokens}</td>
-                  <td style={cellStyle}>{r.requiresHumanReview ? "Required" : "Not required"}</td>
-                  <td style={cellStyle}>
-                    <button type="button" onClick={() => editRow(r)}>
-                      Edit
-                    </button>{" "}
-                    <button type="button" onClick={() => void toggleHistory(r.id)}>
-                      {historyForId === r.id ? "Hide history" : "History"}
-                    </button>
-                  </td>
+        <Card className="overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[820px] border-collapse text-sm">
+              <thead>
+                <tr className="bg-slate-50">
+                  <th className={th}>Document type</th>
+                  <th className={th}>Vertical</th>
+                  <th className={th}>Owning module</th>
+                  <th className={th}>Confidence</th>
+                  <th className={th}>Max tokens</th>
+                  <th className={th}>Human review</th>
+                  <th className={th}>Actions</th>
                 </tr>
-                {historyForId === r.id && (
-                  <tr>
-                    <td colSpan={7} style={{ ...cellStyle, background: "#fafafa" }}>
-                      {historyLoading ? (
-                        <p style={{ margin: 0 }}>Loading version history…</p>
-                      ) : versions.length === 0 ? (
-                        <p style={{ margin: 0, color: "#666" }}>
-                          No prior versions — this template has never been overwritten since it was first saved.
-                        </p>
-                      ) : (
-                        <div style={{ display: "flex", flexDirection: "column", gap: "0.6rem" }}>
-                          <p style={{ margin: 0, fontSize: "0.85rem", color: "#666" }}>
-                            {versions.length} prior version{versions.length === 1 ? "" : "s"} — &ldquo;Recover&rdquo;
-                            restores that version as the live template (and snapshots what it replaces, so this is
-                            always undoable too).
-                          </p>
-                          {versions.map((v) => (
-                            <div
-                              key={v.id}
-                              style={{
-                                border: "1px solid #ddd",
-                                borderRadius: 6,
-                                padding: "0.6rem 0.75rem",
-                                background: "white",
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "flex-start",
-                                gap: "1rem",
-                              }}
-                            >
-                              <div style={{ fontSize: "0.85rem" }}>
-                                <div>
-                                  <strong>{new Date(v.versionedAt).toLocaleString()}</strong>
-                                  {v.versionedByLabel && <> — by {v.versionedByLabel}</>}
-                                </div>
-                                {v.changeReason && <div style={{ color: "#666" }}>{v.changeReason}</div>}
-                                <div style={{ color: "#666" }}>
-                                  confidence {v.confidenceThreshold}, max tokens {v.maxTokens},{" "}
-                                  {v.requiresHumanReview ? "human review required" : "no human review required"}
-                                </div>
-                              </div>
-                              <button type="button" disabled={restoringId === v.id} onClick={() => void restoreVersion(v)}>
-                                {restoringId === v.id ? "Recovering…" : "Recover this version"}
-                              </button>
-                            </div>
-                          ))}
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <Fragment key={r.id}>
+                    <tr className={trBody}>
+                      <td className={`${td} font-medium text-slate-900`}>{r.documentType}</td>
+                      <td className={td}>{r.vertical}</td>
+                      <td className={`${td} text-slate-500`}>{r.owningModule}</td>
+                      <td className={td}>{r.confidenceThreshold}</td>
+                      <td className={td}>{r.maxTokens}</td>
+                      <td className={td}>
+                        <Badge tone={r.requiresHumanReview ? "amber" : "slate"}>
+                          {r.requiresHumanReview ? "Required" : "Not required"}
+                        </Badge>
+                      </td>
+                      <td className={td}>
+                        <div className="flex gap-2">
+                          <button type="button" onClick={() => editRow(r)} className={buttonSecondary}>
+                            Edit
+                          </button>
+                          <button type="button" onClick={() => void toggleHistory(r.id)} className={buttonSecondary}>
+                            {historyForId === r.id ? "Hide history" : "History"}
+                          </button>
                         </div>
-                      )}
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            ))}
-          </tbody>
-        </table>
+                      </td>
+                    </tr>
+                    {historyForId === r.id && (
+                      <tr>
+                        <td colSpan={7} className="bg-slate-50/70 px-4 py-4">
+                          {historyLoading ? (
+                            <p className="flex items-center gap-2 text-sm text-slate-500">
+                              <Spinner /> Loading version history…
+                            </p>
+                          ) : versions.length === 0 ? (
+                            <p className="text-sm text-slate-500">
+                              No prior versions — this template has never been overwritten since it was first saved.
+                            </p>
+                          ) : (
+                            <div className="flex flex-col gap-2.5">
+                              <p className="text-sm text-slate-500">
+                                {versions.length} prior version{versions.length === 1 ? "" : "s"} —
+                                &ldquo;Recover&rdquo; restores that version as the live template (and snapshots what
+                                it replaces, so this is always undoable too).
+                              </p>
+                              {versions.map((v) => (
+                                <div
+                                  key={v.id}
+                                  className="flex items-start justify-between gap-4 rounded-lg border border-slate-200 bg-white px-3.5 py-2.5"
+                                >
+                                  <div className="text-sm">
+                                    <div>
+                                      <strong className="font-semibold text-slate-900">
+                                        {new Date(v.versionedAt).toLocaleString()}
+                                      </strong>
+                                      {v.versionedByLabel && <span className="text-slate-500"> — by {v.versionedByLabel}</span>}
+                                    </div>
+                                    {v.changeReason && <div className="text-slate-500">{v.changeReason}</div>}
+                                    <div className="text-slate-500">
+                                      confidence {v.confidenceThreshold}, max tokens {v.maxTokens},{" "}
+                                      {v.requiresHumanReview ? "human review required" : "no human review required"}
+                                    </div>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    disabled={restoringId === v.id}
+                                    onClick={() => void restoreVersion(v)}
+                                    className={buttonSecondary}
+                                  >
+                                    {restoringId === v.id ? (
+                                      <span className="flex items-center gap-2">
+                                        <Spinner /> Recovering…
+                                      </span>
+                                    ) : (
+                                      "Recover this version"
+                                    )}
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </Card>
       )}
     </main>
   );
 }
-
-const formStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
-  gap: "0.75rem",
-  alignItems: "start",
-  margin: "1rem 0 1.5rem",
-  padding: "1rem",
-  border: "1px solid #ddd",
-  borderRadius: 8,
-};
-const inputStyle: CSSProperties = { display: "block", width: "100%", padding: "0.4rem", marginTop: "0.25rem" };
-const tableStyle: CSSProperties = { width: "100%", borderCollapse: "collapse", fontSize: "0.9rem" };
-const cellStyle: CSSProperties = { border: "1px solid #ddd", padding: "0.4rem", textAlign: "left" };
