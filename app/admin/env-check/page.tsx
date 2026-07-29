@@ -26,6 +26,8 @@ interface EnvVarResult {
   configured: boolean;
   validUrl: boolean | null;
   fingerprint: string | null;
+  testResult: "pass" | "fail" | "not_tested";
+  testMessage: string | null;
 }
 
 interface EnvCheckReport {
@@ -68,6 +70,7 @@ function EnvCheckAdminPageInner() {
 
   const missingCount = report?.vars.filter((v) => !v.configured).length ?? 0;
   const badShapeCount = report?.vars.filter((v) => v.configured && v.isUrl && v.validUrl === false).length ?? 0;
+  const testFailedCount = report?.vars.filter((v) => v.testResult === "fail").length ?? 0;
 
   return (
     <main style={{ fontFamily: "system-ui, sans-serif", padding: "3rem", maxWidth: 960 }}>
@@ -77,7 +80,9 @@ function EnvCheckAdminPageInner() {
         currently configured, and — for URL-shaped values — whether it looks like a valid one. Never displays a
         secret&apos;s actual value; secrets that must match a same-keyed value on cafocus/app show a short
         fingerprint instead, comparable side by side on cafocus/app&apos;s combined dashboard
-        (<code>/admin/env-check</code> there).
+        (<code>/admin/env-check</code> there). &ldquo;Test result&rdquo; is a real, live, side-effect-free probe
+        for anything that&apos;s a secret or a key to another service — plain config flags stay &ldquo;not
+        tested&rdquo; since there&apos;s nothing external to check.
       </p>
 
       <div style={{ margin: "1rem 0", display: "flex", gap: "0.75rem", alignItems: "center" }}>
@@ -85,10 +90,15 @@ function EnvCheckAdminPageInner() {
           {loading ? "Loading…" : "Refresh"}
         </button>
         {report && (
-          <span style={{ color: missingCount === 0 && badShapeCount === 0 ? "green" : "crimson", fontWeight: 600 }}>
-            {missingCount === 0 && badShapeCount === 0
+          <span
+            style={{
+              color: missingCount === 0 && badShapeCount === 0 && testFailedCount === 0 ? "green" : "crimson",
+              fontWeight: 600,
+            }}
+          >
+            {missingCount === 0 && badShapeCount === 0 && testFailedCount === 0
               ? `All ${report.vars.length} configured`
-              : `${missingCount} missing, ${badShapeCount} look malformed, out of ${report.vars.length}`}
+              : `${missingCount} missing, ${badShapeCount} look malformed, ${testFailedCount} failed test, out of ${report.vars.length}`}
           </span>
         )}
       </div>
@@ -103,6 +113,7 @@ function EnvCheckAdminPageInner() {
               <th style={{ padding: "0.4rem" }}>Scope</th>
               <th style={{ padding: "0.4rem" }}>Purpose</th>
               <th style={{ padding: "0.4rem" }}>Status</th>
+              <th style={{ padding: "0.4rem" }}>Test result</th>
             </tr>
           </thead>
           <tbody>
@@ -122,6 +133,15 @@ function EnvCheckAdminPageInner() {
                     <span style={{ color: "green" }}>
                       configured{v.fingerprint ? ` — fingerprint ${v.fingerprint}` : ""}
                     </span>
+                  )}
+                </td>
+                <td style={{ padding: "0.4rem" }} title={v.testMessage ?? undefined}>
+                  {v.testResult === "pass" ? (
+                    <span style={{ color: "green" }}>tested — ok</span>
+                  ) : v.testResult === "fail" ? (
+                    <span style={{ color: "crimson" }}>tested — failed</span>
+                  ) : (
+                    <span style={{ color: "#888" }}>not tested</span>
                   )}
                 </td>
               </tr>
