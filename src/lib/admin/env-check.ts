@@ -165,36 +165,41 @@ async function testSupabaseGroup(): Promise<Record<string, TestOutcomeResult>> {
 
   const results: Record<string, TestOutcomeResult> = {};
 
-  // Supabase's edge gateway now requires an `apikey` header on EVERY
-  // request to a project subdomain — including /auth/v1/health, which used
-  // to be a genuinely public, unauthenticated GoTrue endpoint — as part of
-  // the platform-wide rollout of the new sb_publishable_/sb_secret_ key
-  // format this project uses. An unkeyed request gets rejected before it
-  // ever reaches GoTrue, which made this probe report "failed" for a
-  // perfectly fine URL.
-  try {
-    const res = await fetch(`${url}/auth/v1/health`, publishableKey ? { headers: { apikey: publishableKey, Authorization: `Bearer ${publishableKey}` } } : undefined);
-    results.NEXT_PUBLIC_SUPABASE_URL =
-      res.ok || res.status === 401
-        ? pass("Reachable — Supabase responded.")
-        : fail(`Reachable but returned HTTP ${res.status} — double-check this is the right project URL.`);
-  } catch (err) {
-    results.NEXT_PUBLIC_SUPABASE_URL = fail(`Could not reach this host: ${err instanceof Error ? err.message : String(err)}`);
-  }
-
+  // GoTrue's /auth/v1/settings is the standard, format-agnostic way to
+  // validate a Supabase anon/publishable key: it checks ONLY the `apikey`
+  // header and never touches Authorization at all. That matters here
+  // because /rest/v1/ (what an earlier version of this probe used) makes
+  // PostgREST try to decode Authorization as a JWT — and this project's
+  // newer sb_publishable_... key format isn't a JWT, so PostgREST rejected
+  // it with its own 401 even once the right apikey header was present.
+  // /auth/v1/settings never hits that code path. One request answers both
+  // questions at once: any clean HTTP response (even a 401) proves the URL
+  // is reachable and pointed at a real Supabase gateway — only a
+  // network-level failure (DNS, TLS, connection refused) means the URL
+  // itself is wrong. The response's status then tells us about the key.
   if (publishableKey) {
     try {
-      // Same gateway requirement as above — apikey alone isn't always
-      // enough, Authorization: Bearer must match it too.
-      const res = await fetch(`${url}/rest/v1/`, { headers: { apikey: publishableKey, Authorization: `Bearer ${publishableKey}` } });
-      results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY =
-        res.status === 401
-          ? fail("Supabase rejected this key (401) — it doesn't match this project.")
-          : pass("Supabase accepted this key.");
+      const res = await fetch(`${url}/auth/v1/settings`, { headers: { apikey: publishableKey } });
+      if (res.ok) {
+        results.NEXT_PUBLIC_SUPABASE_URL = pass("Reachable — Supabase Auth responded.");
+        results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = pass("Supabase accepted this key.");
+      } else if (res.status === 401) {
+        results.NEXT_PUBLIC_SUPABASE_URL = pass("Reachable — got a clean HTTP response from a real Supabase gateway.");
+        results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = fail("Supabase rejected this key (401) — it doesn't match this project.");
+      } else {
+        const msg = fail(`Unexpected response: HTTP ${res.status}.`);
+        results.NEXT_PUBLIC_SUPABASE_URL = msg;
+        results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = msg;
+      }
     } catch (err) {
-      results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = fail(`Request failed: ${err instanceof Error ? err.message : String(err)}`);
+      results.NEXT_PUBLIC_SUPABASE_URL = fail(`Could not reach this host: ${err instanceof Error ? err.message : String(err)}`);
+      results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = { result: "not_tested", message: "Skipped — couldn't even reach the host to test this key." };
     }
   } else {
+    results.NEXT_PUBLIC_SUPABASE_URL = {
+      result: "not_tested",
+      message: "Skipped — no key available to authenticate a reachability probe with (Supabase's gateway now requires one on every request).",
+    };
     results.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY = fail("Not set — nothing to test.");
   }
 
