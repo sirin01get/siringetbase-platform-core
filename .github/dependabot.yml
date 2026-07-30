@@ -1,0 +1,19 @@
+version: 2
+
+# Enterprise-gap fix — see cafocus/app/.github/dependabot.yml's identical
+# config for the full reasoning. Same repo shape (npm + GitHub Actions),
+# same fix, mirrored per-repo.
+updates:
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    groups:
+      minor-and-patch:
+        update-types: ["minor", "patch"]
+
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"

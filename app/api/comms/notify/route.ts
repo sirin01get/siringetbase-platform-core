@@ -4,6 +4,7 @@ import { timingSafeEqual } from "@/lib/comms/verify-webhook";
 import { sendNotification } from "@/lib/comms/send-notification";
 import { TemplateNotFoundError } from "@/lib/comms/templates/registry";
 import type { SendEmailRequest } from "@/lib/comms/types";
+import { rateLimitOrNull } from "@/lib/security/rate-limit";
 
 // POST /api/comms/notify — the HTTP-callable wrapper around
 // sendNotification() for callers running in a *different* deployed Worker
@@ -58,6 +59,13 @@ export async function POST(req: NextRequest) {
   if (!to) {
     return errorResponse(400, "`to` is required for non-internal triggerEvents");
   }
+
+  // Enterprise-gap fix: keyed on the recipient, not the caller — the
+  // secret header above already establishes "this is a trusted vertical
+  // backend," so what this guards against is a bug or loop in a calling
+  // vertical repeatedly emailing the SAME address, not a generic abuser.
+  const rateLimited = await rateLimitOrNull("RL_NOTIFY", `notify:${to}`);
+  if (rateLimited) return rateLimited;
 
   const sendRequest: SendEmailRequest = {
     to,

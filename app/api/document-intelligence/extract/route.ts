@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { env } from "@/config/env";
 import { timingSafeEqual } from "@/lib/comms/verify-webhook";
 import { extractDocument } from "@/lib/document-intelligence/extract";
+import { rateLimitOrNull } from "@/lib/security/rate-limit";
 
 // POST /api/document-intelligence/extract — the cross-Worker entry point
 // for "run extraction against a document I just uploaded", called from a
@@ -30,6 +31,17 @@ export async function POST(req: NextRequest) {
   if (!providedSecret || !timingSafeEqual(providedSecret, env.documentIntelligenceInternalSecret())) {
     return errorResponse(401, "Missing or invalid x-document-intelligence-internal-secret header");
   }
+
+  // Enterprise-gap fix: a real Workers AI vision-model call happens per
+  // request here — worth a throughput cap even behind the secret check
+  // above, as a safety valve against a bug or leaked secret causing
+  // runaway calls (real cost, not just noise). A single global bucket, not
+  // keyed per-caller/per-document — there's exactly one trusted caller
+  // type for this endpoint (a vertical's own backend), so this just caps
+  // total extraction throughput rather than attributing abuse to anyone
+  // in particular.
+  const rateLimited = await rateLimitOrNull("RL_EXTRACT", "extract:global");
+  if (rateLimited) return rateLimited;
 
   let formData: FormData;
   try {

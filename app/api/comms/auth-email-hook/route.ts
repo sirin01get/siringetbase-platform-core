@@ -5,6 +5,7 @@ import { getEmailSender } from "@/lib/comms/provider-registry";
 import { logDispatchAttempt, updateDispatchResult } from "@/lib/comms/log";
 import { TemplateNotFoundError } from "@/lib/comms/templates/registry";
 import type { SendEmailRequest } from "@/lib/comms/types";
+import { rateLimitOrNull } from "@/lib/security/rate-limit";
 
 // Supabase Auth's Send Email Hook — registered once, dashboard-side, at
 // Authentication → Hooks → Send Email (https://supabase.com/dashboard/project/_/auth/hooks),
@@ -84,6 +85,17 @@ export async function POST(req: NextRequest) {
   }
 
   const { user, email_data } = payload;
+
+  // Enterprise-gap fix: this hook is the actual delivery point for every
+  // magic-link/recovery/invite email GoTrue sends (see this file's header
+  // comment) — the real "auth email" abuse surface the gap analysis meant,
+  // even though the initial signInWithOtp() call itself goes straight from
+  // the browser to Supabase, not through this app. GoTrue has its own
+  // throttling before it ever calls this hook, but capping here too is
+  // cheap defense-in-depth on this app's own Resend sending capacity/cost,
+  // keyed per-recipient so it can't be used to spam one inbox.
+  const rateLimited = await rateLimitOrNull("RL_AUTH_EMAIL", `auth-email:${user.email}`);
+  if (rateLimited) return rateLimited;
 
   // Primary signal: redirect_to's origin (which vertical's app) and an
   // explicit ?role= query param the onboarding page appends (see
