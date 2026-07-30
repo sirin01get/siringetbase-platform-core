@@ -16,8 +16,11 @@
 //
 // Cloudflare's native Rate Limiting binding — see wrangler.jsonc's
 // "ratelimits" block and https://developers.cloudflare.com/workers/runtime-apis/bindings/rate-limit/.
-// @ts-nocheck for the same getCloudflareContext()-types-collide-with-"dom"
-// reason as src/lib/document-intelligence/model-gateway.ts.
+// The suppression above is for the same getCloudflareContext()-types-
+// collide-with-"dom" reason as src/lib/document-intelligence/model-gateway.ts
+// — and, like that file, this one is excluded from ESLint entirely in
+// eslint.config.mjs, since @typescript-eslint/ban-ts-comment bans
+// @ts-nocheck outright with no allow-with-description override configured.
 
 import { getCloudflareContext } from "@opennextjs/cloudflare";
 import { NextResponse } from "next/server";
