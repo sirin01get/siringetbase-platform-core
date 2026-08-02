@@ -1,6 +1,7 @@
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
 import { runVisionModel, runTextModel, convertToMarkdown } from "./model-gateway";
 import { extractScannedPdfPageImages, mergeExtractedPages, MAX_OCR_PAGES } from "./pdf-ocr";
+import { validateFields, type FieldValidationIssue } from "./field-validation";
 
 // Genuine raster photos go straight to the vision-instruct model unchanged
 // (image bytes + prompt). Everything else this pipeline realistically sees
@@ -146,21 +147,37 @@ function stripToJsonObject(text: string): string | null {
 function scoreExtraction(
   parsed: unknown,
   outputSchema: Record<string, unknown>
-): { confidence: number; missingFields: string[] } {
+): { confidence: number; missingFields: string[]; fieldIssues: FieldValidationIssue[] } {
   const required = Array.isArray(outputSchema.required) ? (outputSchema.required as string[]) : [];
   if (!parsed || typeof parsed !== "object") {
-    return { confidence: 0, missingFields: required };
+    return { confidence: 0, missingFields: required, fieldIssues: [] };
   }
   const obj = parsed as Record<string, unknown>;
   const missingFields = required.filter((key) => obj[key] === undefined || obj[key] === null || obj[key] === "");
   // Heuristic bands: all required fields present -> 0.75; some missing ->
   // scaled down proportionally, floor 0.2 so a mostly-complete extraction
   // doesn't read as a total failure.
-  const confidence =
+  const presenceConfidence =
     required.length === 0
       ? 0.6
       : Math.max(0.2, 0.75 * (1 - missingFields.length / required.length));
-  return { confidence, missingFields };
+
+  // Phase 2 of ../../../document-intelligence/PERFORMANCE_STRATEGY.md:
+  // field-level format/checksum validation (./field-validation.ts) layered
+  // ON TOP of the presence check above, not replacing it — presence alone
+  // can't tell a correct seller_gstin from a present-but-wrong one (one
+  // misread character, still non-empty). Each present-but-invalid field
+  // knocks a fixed amount off the presence score, capped so a single bad
+  // field can't sink an otherwise-complete extraction as hard as being
+  // mostly empty does, and never below the floor below the ordinary
+  // missing-field floor — a document with all required fields present but
+  // one garbled GSTIN is still more useful to a reviewer than one that's
+  // half-empty.
+  const fieldIssues = validateFields(parsed, outputSchema);
+  const validationPenalty = Math.min(0.4, fieldIssues.length * 0.15);
+  const confidence = Math.max(0.1, presenceConfidence - validationPenalty);
+
+  return { confidence, missingFields, fieldIssues };
 }
 
 export async function extractDocument(params: {
@@ -329,7 +346,7 @@ export async function extractDocument(params: {
     return { status: "failed", reason: "Model output wasn't valid JSON.", jobId: job.id };
   }
 
-  const { confidence } = scoreExtraction(parsed, template.output_schema);
+  const { confidence, fieldIssues } = scoreExtraction(parsed, template.output_schema);
 
   // ocrPageCount is only set on the scanned-PDF OCR fallback path — surface
   // it (and whether MAX_OCR_PAGES cut the document short) in raw_output so
@@ -339,11 +356,19 @@ export async function extractDocument(params: {
   const ocrMeta =
     ocrPageCount !== null ? { ocrPageCount, ocrTruncated: ocrPageCount >= MAX_OCR_PAGES } : {};
 
+  // fieldValidationIssues rides along in the same free-form raw_output jsonb
+  // column rather than a new extraction_jobs column — no migration needed,
+  // and it's already the established place a reviewer looks for "why did
+  // this score what it scored" detail (see ocrMeta above). Omitted entirely
+  // when empty rather than stored as [], so an unaffected job's raw_output
+  // shape doesn't change from before this feature existed.
+  const fieldValidationMeta = fieldIssues.length > 0 ? { fieldValidationIssues: fieldIssues } : {};
+
   await supabase
     .from("extraction_jobs")
     .update({
       status: "completed",
-      raw_output: { text: rawText, ...ocrMeta },
+      raw_output: { text: rawText, ...ocrMeta, ...fieldValidationMeta },
       interpretation: parsed as Record<string, unknown>,
       confidence,
       completed_at: new Date().toISOString(),
