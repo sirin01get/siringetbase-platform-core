@@ -82,6 +82,8 @@ export const ENV_VAR_SPECS: EnvVarSpec[] = [
   { name: "ENV_CHECK_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates GET /api/internal/env-check — lets cafocus/app's combined precheck dashboard read this report." },
   { name: "GST_GATEWAY_PROVIDER", scope: "runtime", secret: false, purpose: "Which mock/real GSP adapter is active behind GstGatewayPort. Optional — defaults to generic-gsp-mock." },
   { name: "GST_GSP_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates POST /api/gst-gsp/connect, /push-return, and /status.", mustMatchKey: "gst_gsp_internal_secret" },
+  { name: "OPENAI_API_KEY", scope: "runtime", secret: true, purpose: "Document-intelligence fallback provider #1 — used when a Workers AI extraction call fails or times out. Optional; without it, a Workers AI failure just fails the extraction as before." },
+  { name: "GEMINI_API_KEY", scope: "runtime", secret: true, purpose: "Document-intelligence fallback provider #2 — tried after OpenAI (or instead of it, if only this one is set) when a Workers AI extraction call fails or times out. Optional; without it, a Workers AI failure just fails the extraction as before." },
 ];
 
 export type TestOutcome = "pass" | "fail" | "not_tested";
@@ -268,6 +270,36 @@ async function testResendApiKey(): Promise<TestOutcomeResult> {
   }
 }
 
+// OPENAI_API_KEY: GET /v1/models is a read-only listing endpoint — confirms
+// the key authenticates without running any real (billed) inference.
+async function testOpenAiApiKey(): Promise<TestOutcomeResult> {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) return { result: "not_tested", message: "Not set — Workers AI stays the only provider (no fallback on failure)." };
+  try {
+    const res = await fetch("https://api.openai.com/v1/models", { headers: { Authorization: `Bearer ${key}` } });
+    if (res.status === 401) return fail("OpenAI rejected this key (HTTP 401) — invalid or revoked.");
+    if (!res.ok) return fail(`Unexpected response from OpenAI: HTTP ${res.status}.`);
+    return pass("OpenAI accepted this key (read-only models list — no inference run).");
+  } catch (err) {
+    return fail(`Request failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+// GEMINI_API_KEY: GET /v1beta/models?key=... is Google's equivalent
+// read-only listing endpoint — same reasoning as the OpenAI probe above.
+async function testGeminiApiKey(): Promise<TestOutcomeResult> {
+  const key = process.env.GEMINI_API_KEY;
+  if (!key) return { result: "not_tested", message: "Not set — falls back to OpenAI only (or no fallback at all if that's unset too)." };
+  try {
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${encodeURIComponent(key)}`);
+    if (res.status === 400 || res.status === 403) return fail(`Google rejected this key (HTTP ${res.status}) — invalid or revoked.`);
+    if (!res.ok) return fail(`Unexpected response from Google: HTTP ${res.status}.`);
+    return pass("Google accepted this key (read-only models list — no inference run).");
+  } catch (err) {
+    return fail(`Request failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 // CAFOCUS_APP_BASE_URL: cafocus/app's own unauthenticated GET /api/health.
 async function testCafocusAppBaseUrl(): Promise<TestOutcomeResult> {
   const baseUrl = process.env.CAFOCUS_APP_BASE_URL;
@@ -288,6 +320,8 @@ export async function buildEnvCheckReport(appName: string): Promise<EnvCheckRepo
   for (const [name, r] of Object.entries(await testSupabaseGroup())) testResults.set(name, r);
   for (const [name, r] of Object.entries(await testNeo4jGroup())) testResults.set(name, r);
   testResults.set("RESEND_API_KEY", await testResendApiKey());
+  testResults.set("OPENAI_API_KEY", await testOpenAiApiKey());
+  testResults.set("GEMINI_API_KEY", await testGeminiApiKey());
   testResults.set("CAFOCUS_APP_BASE_URL", await testCafocusAppBaseUrl());
 
   // SEND_EMAIL_HOOK_SECRET verifies an HMAC signature Supabase computes on

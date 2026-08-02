@@ -1,7 +1,15 @@
 import { createSupabaseServiceRoleClient } from "@/lib/supabase/server";
-import { runVisionModel, runTextModel, convertToMarkdown } from "./model-gateway";
+import {
+  runVisionModel,
+  runTextModel,
+  convertToMarkdown,
+  runFallbackExtraction,
+  isFallbackSupportedContentType,
+  type FallbackProvider,
+} from "./model-gateway";
 import { extractScannedPdfPageImages, mergeExtractedPages, MAX_OCR_PAGES } from "./pdf-ocr";
 import { validateFields, type FieldValidationIssue } from "./field-validation";
+import { writeExtractionCompletedEvent } from "./events";
 
 // Genuine raster photos go straight to the vision-instruct model unchanged
 // (image bytes + prompt). Everything else this pipeline realistically sees
@@ -229,10 +237,64 @@ export async function extractDocument(params: {
   let rawText: string | null = null;
   let parsed: unknown = null;
   let ocrPageCount: number | null = null;
+  // Phase 1 item 3 (structured per-attempt logging) — which provider
+  // actually produced rawText. Stays "workers_ai" unless the fallback
+  // chain below (Phase 4, model-gateway.ts's runFallbackExtraction()) is
+  // the one that succeeded.
+  let modelProvider: "workers_ai" | FallbackProvider = "workers_ai";
+  const startedAt = Date.now();
 
-  try {
+  // TypeScript doesn't carry the `!job`/`!doc`/`!template` null-narrowing
+  // above into nested function bodies (writeExtractionFailure and
+  // runPrimaryExtraction below both close over these) — it can't prove a
+  // closure won't run after some other reassignment, so it falls back to
+  // each variable's declared (nullable) type inside them. These are
+  // plain, never-reassigned locals captured right after the narrowing
+  // checks instead, so every closure below sees a definitely-non-null
+  // value without repeating the null check.
+  const jobId = job.id;
+  const docId = doc.id;
+  const templateMaxTokens = template.max_tokens;
+
+  // Small helper so every failure exit writes the same shape of
+  // extraction_jobs/documents update — three call sites need this below
+  // (the primary+fallback catch, the invalid-JSON case), previously
+  // duplicated inline.
+  async function writeExtractionFailure(reason: string, rawOutput: Record<string, unknown>): Promise<ExtractionOutcome> {
+    await supabase
+      .from("extraction_jobs")
+      .update({
+        status: "failed",
+        raw_output: rawOutput,
+        model_provider: modelProvider,
+        completed_at: new Date().toISOString(),
+      })
+      .eq("id", jobId);
+    await supabase.from("documents").update({ status: "extraction_failed" }).eq("id", docId);
+    return { status: "failed", reason, jobId };
+  }
+
+  // The original Workers-AI-only extraction attempt — pulled into its own
+  // function so it can be wrapped by the Phase 4 fallback chain below
+  // without duplicating this whole branch. Throws on any failure, same as
+  // before this was extracted.
+  async function runPrimaryExtraction(): Promise<void> {
+    // Phase 4 item 11 — basic circuit-breaker / backpressure awareness.
+    // Checked FIRST, before spending up to MODEL_CALL_TIMEOUT_MS (90s)
+    // waiting on a provider that's very likely about to fail anyway: if
+    // Workers AI's own recent attempts have mostly been failing, skip
+    // straight to a fallback provider instead of queueing behind the same
+    // outage/rate-limit every other in-flight attempt is presumably also
+    // hitting. Throwing here (rather than special-casing the caller) routes
+    // through the exact same fallback-chain catch block below as any other
+    // primary-path failure — no separate code path to keep in sync.
+    if (isFallbackSupportedContentType(params.contentType) && (await isWorkersAiCircuitOpen(supabase))) {
+      throw new Error(
+        `Workers AI circuit breaker open — ${Math.round(CIRCUIT_BREAKER_FAILURE_THRESHOLD * 100)}%+ of its last ${CIRCUIT_BREAKER_WINDOW} attempts failed; skipping straight to a fallback provider instead of waiting out a likely-doomed call.`
+      );
+    }
     if (VISION_COMPATIBLE_TYPES.has(params.contentType)) {
-      rawText = await runVisionModel({ imageBytes: params.imageBytes, prompt: instruction, maxTokens: template.max_tokens });
+      rawText = await runVisionModel({ imageBytes: params.imageBytes, prompt: instruction, maxTokens: templateMaxTokens });
     } else if (MARKDOWN_CONVERTIBLE_TYPES.has(params.contentType)) {
       const markdown = await convertToMarkdown({
         bytes: params.imageBytes,
@@ -257,17 +319,25 @@ export async function extractDocument(params: {
         // UNVERIFIED against a live deploy (see that file's header comment)
         // — any failure anywhere in this chain (unpdf parsing, the WASM PNG
         // re-encode, or a vision call itself) falls straight through to the
-        // catch block below, same clear "not supported" failure as before
-        // this existed. A bug here degrades to an honest error, never a
-        // silent bad extraction.
+        // catch below, same clear "not supported" failure as before this
+        // existed. A bug here degrades to an honest error, never a silent
+        // bad extraction.
         const pages = await extractScannedPdfPageImages(params.imageBytes);
         if (pages.length === 0) {
           throw new Error(
             "This PDF doesn't appear to contain a text layer, and no page images could be extracted from it either — it may be a scanned or photographed document in a format this pipeline can't read yet. Try uploading the original digital file if one is available."
           );
         }
-        const pageResults: Record<string, unknown>[] = [];
-        for (const page of pages) {
+        // Phase 3 item 8: pages run with bounded CONCURRENCY rather than
+        // one-at-a-time — a 5-page scanned document used to pay for 5
+        // sequential vision-model round trips; OCR_PAGE_CONCURRENCY caps
+        // how many run at once so this doesn't just hammer Workers AI
+        // unbounded (see mapWithConcurrency()'s own comment). Ordering is
+        // preserved (results[i] always corresponds to pages[i]) even
+        // though pages don't necessarily finish in order, which matters
+        // for mergeExtractedPages()' "first non-empty value wins" scalar
+        // handling below — same merge semantics as the old sequential loop.
+        const pageParsedResults = await mapWithConcurrency(pages, OCR_PAGE_CONCURRENCY, async (page) => {
           const pageInstruction = `${instruction}\n\nThis is page ${page.pageNumber} of a ${pages.length}-page scanned document — some fields may only appear on other pages, that's expected.\n\nReminder: respond with ONLY the JSON object described above — no markdown, no page headers, no prose commentary.`;
           // Same per-template ceiling as the non-OCR paths, applied per
           // page rather than divided across pages — a single page's own
@@ -275,21 +345,21 @@ export async function extractDocument(params: {
           // several information categories on its own), and
           // mergeExtractedPages() below is what combines the pages, not a
           // shared token budget between them.
-          const pageRawText = await runVisionModel({ imageBytes: page.pngBytes, prompt: pageInstruction, maxTokens: template.max_tokens });
+          const pageRawText = await runVisionModel({ imageBytes: page.pngBytes, prompt: pageInstruction, maxTokens: templateMaxTokens });
           const pageJsonText = stripToJsonObject(pageRawText);
           if (pageJsonText) {
             try {
               const pageParsed = JSON.parse(pageJsonText);
-              if (pageParsed && typeof pageParsed === "object") {
-                pageResults.push(pageParsed as Record<string, unknown>);
-              }
+              if (pageParsed && typeof pageParsed === "object") return pageParsed as Record<string, unknown>;
             } catch {
               // One unparseable page shouldn't sink an otherwise-good
               // multi-page merge — skip it, same "best effort, not
               // all-or-nothing" posture as the rest of this fallback.
             }
           }
-        }
+          return null;
+        });
+        const pageResults = pageParsedResults.filter((p): p is Record<string, unknown> => p !== null);
         if (pageResults.length === 0) {
           throw new Error(
             "Extracted page images from this scanned PDF, but the vision model couldn't read structured data from any of them."
@@ -301,7 +371,7 @@ export async function extractDocument(params: {
       } else {
         rawText = await runTextModel({
           prompt: `${instruction}\n\nDocument content (converted from the original file to text):\n${markdown}\n\nReminder: respond with ONLY the JSON object described above — no markdown code fences, no page headers or section titles, no prose commentary. Combine information from every page above into a single flat JSON object, not one section per page.`,
-          maxTokens: template.max_tokens,
+          maxTokens: templateMaxTokens,
         });
       }
     } else {
@@ -309,19 +379,57 @@ export async function extractDocument(params: {
         `Uploaded file type "${params.contentType}" isn't supported for extraction (expected a PDF or a JPEG/PNG/WEBP/GIF image).`
       );
     }
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    await supabase
-      .from("extraction_jobs")
-      .update({ status: "failed", raw_output: { error: message }, completed_at: new Date().toISOString() })
-      .eq("id", job.id);
-    await supabase.from("documents").update({ status: "extraction_failed" }).eq("id", doc.id);
-    return { status: "failed", reason: message, jobId: job.id };
+  }
+
+  try {
+    await runPrimaryExtraction();
+  } catch (primaryErr) {
+    const primaryMessage = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+
+    // Phase 4 (../../../document-intelligence/PERFORMANCE_STRATEGY.md item
+    // 10): only attempt OpenAI/Gemini for content types either provider can
+    // actually read natively — see model-gateway.ts's
+    // isFallbackSupportedContentType() for the full reasoning (PDF + raster
+    // images only, not csv/html/docx/xlsx). Everything else falls straight
+    // through to the original failure below, unchanged from before this
+    // existed.
+    if (!isFallbackSupportedContentType(params.contentType)) {
+      return await writeExtractionFailure(primaryMessage, { error: primaryMessage });
+    }
+
+    try {
+      const fallback = await runFallbackExtraction({
+        bytes: params.imageBytes,
+        contentType: params.contentType,
+        prompt: instruction,
+        maxTokens: templateMaxTokens,
+      });
+      rawText = fallback.rawText;
+      modelProvider = fallback.provider;
+      // parsed stays null here — falls into the same strip+parse block
+      // below every other single-response path (runVisionModel/
+      // runTextModel) already goes through, so a fallback response gets
+      // identical JSON-cleanup handling to a Workers AI one.
+    } catch (fallbackErr) {
+      // Every configured fallback (or none at all) failed. Surface the
+      // ORIGINAL Workers AI error, not the fallback error — that's the
+      // real root cause a reviewer needs, per model-gateway.ts's own
+      // reasoning; the fallback attempt and its own failure reason still
+      // ride along in raw_output for anyone who wants the detail, just not
+      // as the headline reason.
+      const fallbackMessage = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+      return await writeExtractionFailure(primaryMessage, {
+        error: primaryMessage,
+        fallbackAttempted: true,
+        fallbackError: fallbackMessage,
+      });
+    }
   }
 
   // The scanned-PDF OCR branch above already sets `parsed` directly (it's
   // a merge of several pages' JSON, not one bare model response) — only
-  // run the single-response strip+parse for every other path.
+  // run the single-response strip+parse for every other path (Workers AI
+  // vision/text, or a Phase 4 fallback response).
   if (parsed === null && rawText !== null) {
     const jsonText = stripToJsonObject(rawText);
     if (jsonText) {
@@ -334,16 +442,7 @@ export async function extractDocument(params: {
   }
 
   if (parsed === null) {
-    await supabase
-      .from("extraction_jobs")
-      .update({
-        status: "failed",
-        raw_output: { text: rawText },
-        completed_at: new Date().toISOString(),
-      })
-      .eq("id", job.id);
-    await supabase.from("documents").update({ status: "extraction_failed" }).eq("id", doc.id);
-    return { status: "failed", reason: "Model output wasn't valid JSON.", jobId: job.id };
+    return await writeExtractionFailure("Model output wasn't valid JSON.", { text: rawText });
   }
 
   const { confidence, fieldIssues } = scoreExtraction(parsed, template.output_schema);
@@ -364,18 +463,112 @@ export async function extractDocument(params: {
   // shape doesn't change from before this feature existed.
   const fieldValidationMeta = fieldIssues.length > 0 ? { fieldValidationIssues: fieldIssues } : {};
 
+  // Phase 1 item 3: durationMs alongside the existing created_at/completed_at
+  // pair, rather than replacing them — a per-attempt wall-clock figure that
+  // doesn't require a reader to subtract two timestamps themselves, and
+  // (unlike created_at) starts from when this specific attempt's model call
+  // began, not when the job row was first inserted.
+  const durationMs = Date.now() - startedAt;
+
   await supabase
     .from("extraction_jobs")
     .update({
       status: "completed",
-      raw_output: { text: rawText, ...ocrMeta, ...fieldValidationMeta },
+      raw_output: { text: rawText, durationMs, ...ocrMeta, ...fieldValidationMeta },
       interpretation: parsed as Record<string, unknown>,
       confidence,
+      model_provider: modelProvider,
       completed_at: new Date().toISOString(),
     })
     .eq("id", job.id);
 
   await supabase.from("documents").update({ status: "extraction_completed" }).eq("id", doc.id);
 
+  // Phase 5 item 12 — the emit(extraction.completed) step
+  // ../../../document-intelligence/README.md documents as designed but not
+  // built. Fired here, after both terminal writes above have already
+  // succeeded — see writeExtractionCompletedEvent()'s own comment for why
+  // this is fire-and-forget/best-effort rather than something this
+  // function awaits failure on.
+  await writeExtractionCompletedEvent({
+    jobId: job.id,
+    documentId: doc.id,
+    vertical: doc.vertical,
+    documentType: doc.document_type,
+    confidence,
+    modelProvider,
+  });
+
   return { status: "completed", jobId: job.id, confidence };
+}
+
+// Phase 4 item 11 — basic circuit-breaker / backpressure awareness. Looks
+// at the most recent CIRCUIT_BREAKER_WINDOW extraction_jobs rows that were
+// primarily attempted via Workers AI (model_provider defaults to
+// 'workers_ai' and only changes if a fallback provider actually produced
+// the response — see extractDocument()'s writeExtractionFailure()/the
+// completed-status update). If CIRCUIT_BREAKER_FAILURE_THRESHOLD or more of
+// them ended status='failed', treat Workers AI as temporarily unavailable
+// for THIS attempt rather than spending up to MODEL_CALL_TIMEOUT_MS finding
+// that out again firsthand. Deliberately approximate, not a precise
+// "Workers AI is down" signal — a status='failed' row can also mean a
+// genuinely malformed document or an unsupported file type, not just a
+// provider outage/rate-limit. The roadmap's own item 11 framing ("a
+// rate-limit response from Workers AI is indistinguishable from any other
+// failure today") accepts exactly this imprecision as the starting point;
+// a more precise signal (e.g. classifying WHICH failures were actually
+// rate-limit/5xx responses vs. content problems) is a reasonable follow-up,
+// not required for "basic" backpressure awareness. Requires a FULL window
+// of data before ever opening the circuit (fewer than
+// CIRCUIT_BREAKER_WINDOW historical rows = not enough signal yet) — a
+// fresh deployment or a document type that's barely been used shouldn't
+// trip this off one or two unlucky failures.
+const CIRCUIT_BREAKER_WINDOW = 10;
+const CIRCUIT_BREAKER_FAILURE_THRESHOLD = 0.6;
+
+async function isWorkersAiCircuitOpen(supabase: ReturnType<typeof createSupabaseServiceRoleClient>): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("extraction_jobs")
+    .select("status")
+    .eq("model_provider", "workers_ai")
+    .in("status", ["completed", "failed"])
+    .order("created_at", { ascending: false })
+    .limit(CIRCUIT_BREAKER_WINDOW);
+
+  // Fails OPEN in the literal sense — any error reading this history (a
+  // transient DB blip, a schema mismatch) means "don't know," which should
+  // never block or reroute a real extraction attempt over a check that's
+  // purely an optimization, not a correctness requirement.
+  if (error || !data || data.length < CIRCUIT_BREAKER_WINDOW) return false;
+
+  const failures = data.filter((row) => (row as { status: string }).status === "failed").length;
+  return failures / data.length >= CIRCUIT_BREAKER_FAILURE_THRESHOLD;
+}
+
+// Phase 3 item 8 — bounded-concurrency page mapper for the scanned-PDF OCR
+// fallback above. 3 is a deliberately conservative starting point (not
+// unbounded Promise.all): each page is its own vision-model round trip
+// against a shared Workers AI account-level rate limit, and there's no live
+// traffic data yet on where that ceiling actually sits (Phase 3 item 9's
+// benchmark tooling is the intended way to get that data). Safe to raise
+// once real scanned-document throughput is observed. Preserves result
+// ORDER (results[i] matches items[i]) regardless of which worker finishes
+// which item first — callers that care about page order (mergeExtractedPages()'
+// scalar "first non-empty wins" semantics) depend on this.
+const OCR_PAGE_CONCURRENCY = 3;
+
+async function mapWithConcurrency<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = new Array(items.length);
+  let nextIndex = 0;
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      const item = items[i];
+      if (item === undefined) return;
+      results[i] = await fn(item);
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, () => worker()));
+  return results;
 }

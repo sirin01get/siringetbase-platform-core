@@ -20,10 +20,42 @@
 // Intelligence" section for the exact command. Every call before that
 // returns an error about the license/terms, not a code bug.
 //
-// No fallback provider wired yet (../../../document-intelligence/README.md
-// describes "Workers AI default, OpenAI fallback" — only the default half
-// is built; OpenAI fallback is flagged, not implemented, since it would
-// need a new external API key this build doesn't have configured anywhere).
+// Fallback providers (Phase 4 of ../../../document-intelligence/
+// PERFORMANCE_STRATEGY.md, item 10) — runFallbackExtraction() below, tried
+// by extract.ts only after the Workers AI path above has already thrown.
+// Two providers rather than the one originally scoped ("build the OpenAI
+// fallback"): OpenAI first, then Gemini as a second option if OpenAI is
+// either unconfigured or itself fails — a burst Workers AI outage
+// coinciding with an OpenAI outage is exactly the case a single fallback
+// doesn't cover. Both optional (env.openAiApiKey()/geminiApiKey() return
+// undefined if unset) — a deployment with neither configured behaves
+// exactly as before this existed: a Workers AI failure is still a hard
+// failure, just with a clearer "no fallback configured" reason attached
+// instead of silently trying nothing.
+//
+// Deliberately NOT a byte-for-byte reimplementation of the Workers AI path
+// above (markdown-conversion + per-page OCR fallback) — both OpenAI's and
+// Gemini's chat/generateContent APIs accept a PDF or raster image directly
+// as multimodal input and handle the page-reading themselves, so the
+// fallback functions send the ORIGINAL uploaded file straight through,
+// scoped to the content types both providers can read natively (PDF + the
+// same image/* types VISION_COMPATIBLE_TYPES below already accepts — see
+// isFallbackSupportedContentType()). The other MARKDOWN_CONVERTIBLE_TYPES
+// in extract.ts (csv/html/docx/xlsx) have no equivalent native-document
+// path on either provider without real testing to confirm one, so a
+// failure on those content types just isn't retried — falls straight
+// through to today's existing failure, not a silent gap.
+//
+// UNVERIFIED AGAINST A LIVE DEPLOY, same posture as pdf-ocr.ts: built and
+// typechecked without live OPENAI_API_KEY/GEMINI_API_KEY credentials or
+// network access to either provider from this sandbox. Both request shapes
+// are built from each provider's own current API documentation (OpenAI
+// Chat Completions' `file`/`image_url` content parts, Gemini's
+// generateContent `inlineData` part), but neither has actually round-
+// tripped a real document through a live API call. Test with a real key
+// before trusting this in production — a bug here degrades to the ORIGINAL
+// Workers AI error still winning (see extract.ts's runExtractionWithFallback()),
+// never a crash or a silently wrong extraction.
 //
 // runVisionModel()/runTextModel() take `maxTokens` as a plain named
 // parameter, not nested inside a Workers-AI-shaped options object — root-
@@ -55,6 +87,7 @@
 // upload actually takes.
 
 import { getCloudflareContext } from "@opennextjs/cloudflare";
+import { env } from "@/config/env";
 
 const MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 
@@ -193,4 +226,180 @@ export async function convertToMarkdown(params: {
     throw new Error(single?.error ?? "Markdown conversion returned no content and no error message.");
   }
   return single.data ?? "";
+}
+
+// --- Fallback providers (Phase 4) --------------------------------------
+// See this file's header comment for the full design/scope reasoning.
+
+// Same five raster types VISION_COMPATIBLE_TYPES accepts in extract.ts,
+// plus application/pdf (which neither provider needs Workers-AI-style
+// markdown-conversion for — both read a PDF natively). Not the full
+// MARKDOWN_CONVERTIBLE_TYPES set — see header comment for why csv/html/
+// docx/xlsx aren't included here.
+const FALLBACK_SUPPORTED_TYPES = new Set([
+  "application/pdf",
+  "image/jpeg",
+  "image/jpg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+]);
+
+export function isFallbackSupportedContentType(contentType: string): boolean {
+  return FALLBACK_SUPPORTED_TYPES.has(contentType);
+}
+
+export interface FallbackExtractionParams {
+  bytes: ArrayBuffer;
+  contentType: string;
+  prompt: string;
+  maxTokens: number;
+}
+
+// btoa() only accepts a binary string, not raw bytes — chunked to avoid
+// blowing the call stack via String.fromCharCode(...hugeArray) on a
+// multi-MB file (a real GST invoice PDF or a phone-camera photo can
+// comfortably exceed the ~65k-argument ceiling most JS engines impose on
+// spread/apply). Same chunking concern pdf-ocr.ts's base64ToBytes()
+// sidesteps in the opposite direction (base64 -> bytes) by iterating
+// byte-by-byte instead of chunking; chunking is the cheaper direction here
+// since fromCharCode accepts many args per call, just not unbounded many.
+function bytesToBase64(bytes: ArrayBuffer): string {
+  const arr = new Uint8Array(bytes);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < arr.length; i += chunkSize) {
+    binary += String.fromCharCode(...arr.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+// OpenAI Chat Completions, vision-capable model. gpt-4o-mini over gpt-4o —
+// this is a fallback path (Workers AI already failed), not the primary
+// extraction quality bar, so cost/latency wins over the marginal accuracy
+// gain of the larger model; revisit if fallback accuracy turns out to
+// matter more than that trade-off suggests. PDFs go through as a `file`
+// content part (file_data as a base64 data URI); raster images as
+// `image_url` the same way. Both are read natively by the model — no
+// separate OCR/markdown-conversion step needed, unlike the Workers AI path.
+const OPENAI_MODEL = "gpt-4o-mini";
+
+export async function runOpenAiExtraction(params: FallbackExtractionParams): Promise<string> {
+  const apiKey = env.openAiApiKey();
+  if (!apiKey) throw new Error("OPENAI_API_KEY is not configured.");
+
+  const base64 = bytesToBase64(params.bytes);
+  const contentPart =
+    params.contentType === "application/pdf"
+      ? { type: "file", file: { filename: "document.pdf", file_data: `data:application/pdf;base64,${base64}` } }
+      : { type: "image_url", image_url: { url: `data:${params.contentType};base64,${base64}` } };
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${apiKey}` },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      max_tokens: params.maxTokens,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: params.prompt },
+            contentPart,
+          ],
+        },
+      ],
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`OpenAI returned HTTP ${res.status}: ${errBody.slice(0, 500)}`);
+  }
+
+  const data = (await res.json()) as { choices?: { message?: { content?: string } }[] };
+  const text = data.choices?.[0]?.message?.content;
+  if (!text) throw new Error("OpenAI response had no message content.");
+  return text;
+}
+
+// Gemini generateContent — PDFs and images both go through as an
+// `inlineData` part (base64 + mimeType), Google's documented native-
+// document path for both content types alike, so unlike OpenAI's split
+// content-part shape above there's no PDF-vs-image branch needed here.
+const GEMINI_MODEL = "gemini-1.5-flash";
+
+export async function runGeminiExtraction(params: FallbackExtractionParams): Promise<string> {
+  const apiKey = env.geminiApiKey();
+  if (!apiKey) throw new Error("GEMINI_API_KEY is not configured.");
+
+  const base64 = bytesToBase64(params.bytes);
+  const res = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${encodeURIComponent(apiKey)}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        contents: [
+          {
+            parts: [{ text: params.prompt }, { inlineData: { mimeType: params.contentType, data: base64 } }],
+          },
+        ],
+        generationConfig: { maxOutputTokens: params.maxTokens },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    const errBody = await res.text().catch(() => "");
+    throw new Error(`Gemini returned HTTP ${res.status}: ${errBody.slice(0, 500)}`);
+  }
+
+  const data = (await res.json()) as { candidates?: { content?: { parts?: { text?: string }[] } }[] };
+  const text = data.candidates?.[0]?.content?.parts?.map((p) => p.text ?? "").join("");
+  if (!text) throw new Error("Gemini response had no content parts.");
+  return text;
+}
+
+export type FallbackProvider = "openai" | "gemini";
+
+export interface FallbackExtractionResult {
+  rawText: string;
+  provider: FallbackProvider;
+}
+
+// Tried in order: OpenAI, then Gemini. Either or both may be unconfigured
+// (that's not an error here — see FallbackExtractionParams's header
+// comment) or may themselves fail (a bad key, the provider's own outage,
+// content the model refuses). Only once every configured option is
+// exhausted does this throw — extract.ts's caller then re-surfaces the
+// ORIGINAL Workers AI error (not this function's), so whoever reviews a
+// failed job sees the real root cause, not "and then two fallbacks also
+// failed" noise on top of it. See extract.ts's runExtractionWithFallback().
+export async function runFallbackExtraction(params: FallbackExtractionParams): Promise<FallbackExtractionResult> {
+  const attempts: string[] = [];
+
+  if (env.openAiApiKey()) {
+    try {
+      const rawText = await runOpenAiExtraction(params);
+      return { rawText, provider: "openai" };
+    } catch (err) {
+      attempts.push(`OpenAI: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  if (env.geminiApiKey()) {
+    try {
+      const rawText = await runGeminiExtraction(params);
+      return { rawText, provider: "gemini" };
+    } catch (err) {
+      attempts.push(`Gemini: ${err instanceof Error ? err.message : String(err)}`);
+    }
+  }
+
+  throw new Error(
+    attempts.length > 0
+      ? `All configured fallback providers failed — ${attempts.join("; ")}`
+      : "No fallback provider is configured (OPENAI_API_KEY and GEMINI_API_KEY both unset)."
+  );
 }

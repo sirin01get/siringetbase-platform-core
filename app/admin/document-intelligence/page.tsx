@@ -264,6 +264,18 @@ function DocumentIntelligenceAdminPageInner() {
         description={
           <>
             <p>
+              See also the{" "}
+              <a href="/admin/document-intelligence/performance" className="font-medium text-slate-900 underline decoration-dotted">
+                performance dashboard
+              </a>{" "}
+              — success rate, latency, confidence, a per-template max_tokens audit, and which fields reviewers
+              correct most often — and the{" "}
+              <a href="/admin/document-intelligence/benchmark" className="font-medium text-slate-900 underline decoration-dotted">
+                model benchmark tool
+              </a>{" "}
+              for comparing candidate Workers AI vision models before switching.
+            </p>
+            <p className="mt-2">
               A document is only parsed by the AI model if a template is registered here for its exact{" "}
               <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">document_type</code> +{" "}
               <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">vertical</code>. Without one, upload

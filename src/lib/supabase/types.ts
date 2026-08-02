@@ -33,6 +33,12 @@ export interface Database {
           role: string;
           status: "active" | "pending_verification" | "suspended" | "rejected";
           created_at: string;
+          // Self-run product demo (0030_role_profiles_demo_flag.sql) — true
+          // for the fixed individual/small-business/CA demo identities
+          // cafocus/app's demo seed script maintains. Every downstream
+          // table traces back to a role_profile, so this one flag is
+          // enough for any admin/analytics query to exclude demo data.
+          is_demo: boolean;
         };
         Insert: {
           id?: string;
@@ -42,6 +48,7 @@ export interface Database {
           role: string;
           status?: "active" | "pending_verification" | "suspended" | "rejected";
           created_at?: string;
+          is_demo?: boolean;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["role_profiles"]["Insert"]>;
       };
@@ -330,6 +337,18 @@ export interface Database {
           confidence: number | null;
           reviewed_by: string | null;
           reviewed_at: string | null;
+          // 0015_document_review.sql — null until a CA/business_admin
+          // reviewer edits an extracted field; the diff against
+          // `interpretation` is exactly what Phase 2 item 6's
+          // correction-mining report (./metrics.ts) reads to find which
+          // fields the model tends to get wrong. Was already a real column
+          // on siringetbase.extraction_jobs (cafocus/app's own types.ts had
+          // it) — this repo's copy of the type just hadn't caught up.
+          corrected_interpretation: Record<string, unknown> | null;
+          // 0031_extraction_jobs_model_provider.sql — Phase 1/4 of
+          // ../../../document-intelligence/PERFORMANCE_STRATEGY.md. Which
+          // provider actually served this attempt; defaults 'workers_ai'.
+          model_provider: "workers_ai" | "openai" | "gemini";
           created_at: string;
           completed_at: string | null;
         };
@@ -343,10 +362,40 @@ export interface Database {
           confidence?: number | null;
           reviewed_by?: string | null;
           reviewed_at?: string | null;
+          corrected_interpretation?: Record<string, unknown> | null;
+          model_provider?: "workers_ai" | "openai" | "gemini";
           created_at?: string;
           completed_at?: string | null;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["extraction_jobs"]["Insert"]>;
+      };
+      // 0032_extraction_events.sql — Phase 5 item 12 of
+      // ../../../document-intelligence/PERFORMANCE_STRATEGY.md. See
+      // ../document-intelligence/events.ts.
+      extraction_events: {
+        Row: {
+          id: string;
+          job_id: string;
+          document_id: string;
+          vertical: string;
+          document_type: string;
+          event_type: "extraction.completed";
+          payload: Record<string, unknown>;
+          created_at: string;
+          consumed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          job_id: string;
+          document_id: string;
+          vertical: string;
+          document_type: string;
+          event_type?: "extraction.completed";
+          payload: Record<string, unknown>;
+          created_at?: string;
+          consumed_at?: string | null;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["extraction_events"]["Insert"]>;
       };
       // Referrals — 0005_referrals.sql. See ../../../referrals/README.md for
       // the full design (three referral_type values, one shared ledger).

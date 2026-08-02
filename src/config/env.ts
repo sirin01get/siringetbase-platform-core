@@ -158,4 +158,17 @@ export const env = {
   // src/lib/gst-gsp/gst-gsp-client.ts), never a browser. MUST match the
   // calling vertical's own GST_GSP_INTERNAL_SECRET exactly.
   gstGspInternalSecret: () => required("GST_GSP_INTERNAL_SECRET", process.env.GST_GSP_INTERNAL_SECRET),
+
+  // Document Intelligence Phase 4 fallback providers (../../document-
+  // intelligence/PERFORMANCE_STRATEGY.md item 10) — src/lib/document-
+  // intelligence/model-gateway.ts's runOpenAiExtraction()/
+  // runGeminiExtraction(). Deliberately optional (plain `process.env`
+  // reads, not `required()`): Workers AI stays the default provider either
+  // way, so a deployment that hasn't set either key just never gets a
+  // fallback attempt on a Workers AI failure — that's a real degradation
+  // (back to today's "hard failure, full stop"), not a broken deployment,
+  // so it shouldn't throw at import time the way a genuinely required var
+  // does. Both are Tier 1 secrets (../../security/README.md) once set.
+  openAiApiKey: () => process.env.OPENAI_API_KEY,
+  geminiApiKey: () => process.env.GEMINI_API_KEY,
 };
