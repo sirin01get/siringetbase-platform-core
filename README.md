@@ -121,6 +121,8 @@ npm run deploy     # build + deploy to Cloudflare
 
 If deploying via the Cloudflare dashboard's Git integration, set the project's **Build command** to `npm run cf:build`, not `npm run build` — same reasoning as `homeai/homeai`'s README: `cf:build` (the OpenNext step) internally calls `build` (plain `next build`), so pointing the dashboard's build command at `cf:build` directly avoids the infinite-recursion trap of doing it the other way around.
 
+**`wrangler` is pinned to an exact `4.85.0`, not a caret range** — `wrangler@4.86.0` through at least `4.95.x` crash on Windows + Node 24 with `spawn UNKNOWN` (this Worker's `AI` binding forces wrangler to spin up a local remote-bindings proxy on every `build`/`deploy`/plain `wrangler deploy`, which is exactly the code path that regressed; see [cloudflare/workers-sdk#14054](https://github.com/cloudflare/workers-sdk/issues/14054), closed "not planned" with no confirmed fix version as of this writing). If you're on Linux/macOS or WSL2 this pin is unnecessary — OpenNext's own Windows-native support is explicitly "may work, WSL2 recommended" regardless. Bumping `wrangler` here later should first be checked against a real Windows + Node 24 `npm run deploy` before landing.
+
 CI (`.github/workflows/ci.yml`) runs lint/typecheck/build on every push/PR as a verification gate — it does not deploy; Cloudflare Workers Builds' own Git integration owns that, avoiding a double-deploy race.
 
 ### Activating `POST /api/comms/notify` (Support Escalation's cross-Worker send)
