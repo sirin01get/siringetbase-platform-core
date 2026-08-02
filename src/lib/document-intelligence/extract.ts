@@ -68,16 +68,79 @@ export interface ExtractionOutcome {
   confidence?: number;
 }
 
+// Scans forward from the first '{' in `text`, tracking brace depth (and
+// skipping braces inside string literals) until that first object closes,
+// and returns just that substring. This is deliberately NOT "first '{' to
+// LAST '}' in the whole string" — root-caused against a real purchase-
+// invoice extraction that failed with exactly that naive approach: the
+// model answered correctly once inside a fenced block, then — unprompted —
+// restated the same answer a second time under a "JSON output:" heading,
+// and that second attempt got cut off by the max_tokens ceiling with no
+// closing brace. First-to-last slicing spliced the complete first object
+// together with the dangling start of the second, producing a string that
+// LOOKED like it had balanced outer braces (there IS a '{' at the start and
+// a '}' somewhere near the end) but was actually two objects concatenated —
+// invalid JSON either way. Returns null (rather than a best-effort slice)
+// if the object never closes, since a truncated object has no valid
+// substring to offer.
+function extractBalancedJsonObject(text: string): string | null {
+  const start = text.indexOf("{");
+  if (start === -1) return null;
+  let depth = 0;
+  let inString = false;
+  let escapeNext = false;
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+    if (escapeNext) {
+      escapeNext = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escapeNext = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === "{") depth++;
+    else if (ch === "}") {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+  return null;
+}
+
 function stripToJsonObject(text: string): string | null {
-  // Model output is a chat-style response, not guaranteed to be bare JSON —
-  // strip markdown code fences if present, then take the substring between
-  // the first '{' and the last '}'. Good enough for a single top-level JSON
-  // object, which is all every template here asks for.
-  const withoutFences = text.replace(/```json/gi, "").replace(/```/g, "");
-  const start = withoutFences.indexOf("{");
-  const end = withoutFences.lastIndexOf("}");
-  if (start === -1 || end === -1 || end < start) return null;
-  return withoutFences.slice(start, end + 1);
+  // Model output is a chat-style response, not guaranteed to be bare JSON,
+  // and — per extractBalancedJsonObject()'s comment above — sometimes
+  // contains more than one attempt at an answer. Collect every fenced
+  // ```/```json code block and try them from LAST to FIRST (a model that
+  // restates its answer, e.g. loose narration followed by a "JSON output:"
+  // block, puts the real/most-refined one last), falling back to the raw,
+  // unfenced text if there are no fences at all or none of them parse.
+  const fenced: string[] = [];
+  const fenceRegex = /```(?:json)?\s*([\s\S]*?)```/gi;
+  let match: RegExpExecArray | null;
+  while ((match = fenceRegex.exec(text)) !== null) {
+    fenced.push(match[1] ?? "");
+  }
+  const candidates = [...fenced.reverse(), text];
+
+  for (const candidate of candidates) {
+    const obj = extractBalancedJsonObject(candidate);
+    if (!obj) continue;
+    try {
+      JSON.parse(obj);
+      return obj;
+    } catch {
+      // Balanced braces but still not valid JSON (e.g. a trailing comma) —
+      // try the next candidate rather than giving up immediately.
+    }
+  }
+  return null;
 }
 
 function scoreExtraction(
@@ -188,7 +251,7 @@ export async function extractDocument(params: {
         }
         const pageResults: Record<string, unknown>[] = [];
         for (const page of pages) {
-          const pageInstruction = `${instruction}\n\nThis is page ${page.pageNumber} of a ${pages.length}-page scanned document — some fields may only appear on other pages, that's expected.`;
+          const pageInstruction = `${instruction}\n\nThis is page ${page.pageNumber} of a ${pages.length}-page scanned document — some fields may only appear on other pages, that's expected.\n\nReminder: respond with ONLY the JSON object described above — no markdown, no page headers, no prose commentary.`;
           // Same per-template ceiling as the non-OCR paths, applied per
           // page rather than divided across pages — a single page's own
           // entries still need real headroom (e.g. one AIS page can carry
@@ -220,7 +283,7 @@ export async function extractDocument(params: {
         rawText = JSON.stringify({ ocrMergedFrom: pages.length, pages: pageResults });
       } else {
         rawText = await runTextModel({
-          prompt: `${instruction}\n\nDocument content (converted from the original file to text):\n${markdown}`,
+          prompt: `${instruction}\n\nDocument content (converted from the original file to text):\n${markdown}\n\nReminder: respond with ONLY the JSON object described above — no markdown code fences, no page headers or section titles, no prose commentary. Combine information from every page above into a single flat JSON object, not one section per page.`,
           maxTokens: template.max_tokens,
         });
       }
