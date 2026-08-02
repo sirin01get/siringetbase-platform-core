@@ -80,6 +80,8 @@ export const ENV_VAR_SPECS: EnvVarSpec[] = [
   { name: "CAFOCUS_APP_BASE_URL", scope: "runtime", secret: true, isUrl: true, purpose: "cafocus/app's deployed URL — the daily subscription-billing cron's callback target." },
   { name: "SUBSCRIPTIONS_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates the reverse-direction subscription-billing-cycle call.", mustMatchKey: "subscriptions_internal_secret" },
   { name: "ENV_CHECK_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates GET /api/internal/env-check — lets cafocus/app's combined precheck dashboard read this report." },
+  { name: "GST_GATEWAY_PROVIDER", scope: "runtime", secret: false, purpose: "Which mock/real GSP adapter is active behind GstGatewayPort. Optional — defaults to generic-gsp-mock." },
+  { name: "GST_GSP_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates POST /api/gst-gsp/connect, /push-return, and /status.", mustMatchKey: "gst_gsp_internal_secret" },
 ];
 
 export type TestOutcome = "pass" | "fail" | "not_tested";
@@ -305,12 +307,12 @@ export async function buildEnvCheckReport(appName: string): Promise<EnvCheckRepo
     result: "not_tested",
     message: "This deployment is the callee for this secret — see the \"Shared secrets\" fingerprint cross-check on cafocus/app's combined dashboard for the real test.",
   };
-  for (const n of ["COMMS_INTERNAL_SECRET", "DOCUMENT_INTELLIGENCE_INTERNAL_SECRET", "PAYMENTS_INTERNAL_SECRET", "SUBSCRIPTIONS_INTERNAL_SECRET", "ENV_CHECK_INTERNAL_SECRET"]) {
+  for (const n of ["COMMS_INTERNAL_SECRET", "DOCUMENT_INTELLIGENCE_INTERNAL_SECRET", "PAYMENTS_INTERNAL_SECRET", "SUBSCRIPTIONS_INTERNAL_SECRET", "ENV_CHECK_INTERNAL_SECRET", "GST_GSP_INTERNAL_SECRET"]) {
     testResults.set(n, noSelfTest);
   }
 
   const controlNote: TestOutcomeResult = { result: "not_tested", message: "Just a control — the configured/shape check above is sufficient." };
-  for (const n of ["PAYMENT_GATEWAY_PROVIDER", "BANK_PAYOUT_PROVIDER", "COMMS_FROM_EMAIL", "SUPPORT_INBOX_EMAIL"]) {
+  for (const n of ["PAYMENT_GATEWAY_PROVIDER", "BANK_PAYOUT_PROVIDER", "COMMS_FROM_EMAIL", "SUPPORT_INBOX_EMAIL", "GST_GATEWAY_PROVIDER"]) {
     testResults.set(n, controlNote);
   }
 

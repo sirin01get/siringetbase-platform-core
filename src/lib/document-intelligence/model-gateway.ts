@@ -66,15 +66,62 @@ const MODEL = "@cf/meta/llama-3.2-11b-vision-instruct";
 // parameter existing is to not fall back to that.
 const FALLBACK_MAX_TOKENS = 2048;
 
+// Root-caused fix for the recurring stuck-at-"processing" bug (see
+// ../../../../document-intelligence/PERFORMANCE_STRATEGY.md's Phase 1) —
+// reproduced 4 times in one evening (bank_statement, three individual
+// document types, capital_gains_statement), all sharing one trait: an
+// array-heavy template with max_tokens bumped to 4096. Confirmed via
+// siringetbase.extraction_jobs each time that extractDocument() (extract.ts)
+// HAD already reached its model-calling try block — the job row existed
+// with status='processing' and documents.status had already flipped to
+// 'extraction_queued' — so the hang is not "the request to platform-core
+// never arrived" (that theory drove an earlier, unsuccessful fix attempt in
+// cafocus/app's retry.ts/trigger.ts). It's that `env.AI.run()`/
+// `env.AI.toMarkdown()` below never settled — neither resolved nor
+// rejected — leaving extractDocument()'s single `await` parked forever, so
+// it never reaches its own catch block or writes a terminal status.
+// withTimeout() bounds that specific await: past MODEL_CALL_TIMEOUT_MS the
+// wrapped promise rejects with a clear message, which flows straight into
+// extract.ts's existing catch block (already writes extraction_jobs
+// status='failed' + documents.status='extraction_failed' with a real
+// reason) — turning a silent, permanent hang into a normal, visible,
+// retryable failure. The underlying env.AI call itself is NOT cancelled
+// (Workers AI's binding gives no abort mechanism) and may still resolve
+// long after this — that dangling promise is harmless since nothing holds
+// a reference to it once withTimeout() has already settled the race.
+const MODEL_CALL_TIMEOUT_MS = 90_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(new Error(`${label} did not respond within ${ms / 1000}s — Workers AI call never settled.`));
+    }, ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      }
+    );
+  });
+}
+
 export async function runVisionModel(params: { imageBytes: ArrayBuffer; prompt: string; maxTokens?: number }): Promise<string> {
   const { env } = getCloudflareContext();
   const image = [...new Uint8Array(params.imageBytes)];
 
-  const result = await env.AI.run(MODEL, {
-    image,
-    prompt: params.prompt,
-    max_tokens: params.maxTokens ?? FALLBACK_MAX_TOKENS,
-  });
+  const result = await withTimeout(
+    env.AI.run(MODEL, {
+      image,
+      prompt: params.prompt,
+      max_tokens: params.maxTokens ?? FALLBACK_MAX_TOKENS,
+    }),
+    MODEL_CALL_TIMEOUT_MS,
+    "Vision model call"
+  );
 
   return extractTextFromModelResult(result);
 }
@@ -86,7 +133,11 @@ export async function runVisionModel(params: { imageBytes: ArrayBuffer; prompt: 
 // for a photographed document, just without needing to read pixels itself.
 export async function runTextModel(params: { prompt: string; maxTokens?: number }): Promise<string> {
   const { env } = getCloudflareContext();
-  const result = await env.AI.run(MODEL, { prompt: params.prompt, max_tokens: params.maxTokens ?? FALLBACK_MAX_TOKENS });
+  const result = await withTimeout(
+    env.AI.run(MODEL, { prompt: params.prompt, max_tokens: params.maxTokens ?? FALLBACK_MAX_TOKENS }),
+    MODEL_CALL_TIMEOUT_MS,
+    "Text model call"
+  );
   return extractTextFromModelResult(result);
 }
 

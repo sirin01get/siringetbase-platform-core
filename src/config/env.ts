@@ -142,4 +142,20 @@ export const env = {
   // reading THIS deployment's report. MUST match cafocus/app's own
   // ENV_CHECK_INTERNAL_SECRET.
   envCheckInternalSecret: () => required("ENV_CHECK_INTERNAL_SECRET", process.env.ENV_CHECK_INTERNAL_SECRET),
+
+  // GST-GSP (../../gst-gsp/README.md) — which mock/real adapter is active
+  // behind GstGatewayPort (see src/lib/gst-gsp/registry.ts). Same posture
+  // as paymentGatewayProvider() above: the provider *name* is not secret;
+  // a real GSP's OAuth client credentials, once one is selected, would be
+  // Worker Secrets, read here but never logged.
+  gstGatewayProvider: () => (process.env.GST_GATEWAY_PROVIDER ?? "generic-gsp-mock") as "generic-gsp-mock",
+
+  // GST-GSP cross-Worker entry points — app/api/gst-gsp/connect/route.ts,
+  // .../push-return/route.ts, .../status/route.ts's shared-secret header.
+  // Same "single trusted caller per vertical" reasoning and separate-
+  // secret-per-surface posture as paymentsInternalSecret() above — a
+  // vertical's filing workbench is the caller (e.g. cafocus/app's
+  // src/lib/gst-gsp/gst-gsp-client.ts), never a browser. MUST match the
+  // calling vertical's own GST_GSP_INTERNAL_SECRET exactly.
+  gstGspInternalSecret: () => required("GST_GSP_INTERNAL_SECRET", process.env.GST_GSP_INTERNAL_SECRET),
 };
