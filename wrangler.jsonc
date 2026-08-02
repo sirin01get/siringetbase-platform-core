@@ -14,24 +14,27 @@
 		"directory": ".open-next/assets",
 		"binding": "ASSETS"
 	},
-	// TEMPORARILY DISABLED (2026-07-29) — every deploy attempt has been
-	// failing on the final "deploy triggers to /schedules" API call (exit
-	// code non-zero), and there's real doubt about whether Cloudflare
-	// promotes/activates a deployment whose overall wrangler command
-	// reported failure — which would mean every code fix made today
-	// (env-check.ts's Supabase probe fixes) never actually went live,
-	// despite the intermediate "Uploaded siringetbase-platform-core" step
-	// looking successful. Removing this block entirely so the deploy has
-	// nothing left to fail on, to isolate: does the Worker script itself
-	// go live once /schedules is out of the picture? Once confirmed,
-	// restore this exact block (three entries: entity_sync_queue drain
-	// every minute, weekly Sunday 03:00 UTC audit-log bin purge, daily
-	// 05:00 UTC subscription billing) and re-diagnose the schedules-API
-	// failure as its own, separate problem — see this file's git history
-	// for the original comment on each cron's purpose.
-	// "triggers": {
-	// 	"crons": ["*/1 * * * *", "0 3 * * 0", "0 5 * * *"]
-	// },
+	// RE-ENABLED (2026-08-02) — was disabled 2026-07-29 after every deploy
+	// attempt failed on the final "deploy triggers to /schedules" API call.
+	// That isolation experiment's other half (does the Worker script itself
+	// go live once /schedules is out of the picture) was confirmed yes —
+	// every code-only deploy since then (most recently the model-gateway.ts
+	// timeout fix) has landed fine with this block removed. Restoring it now
+	// because sweepStuckExtractionJobs() (worker.ts's scheduled() handler,
+	// document-intelligence/dead-letter-sweep.ts) needs the every-minute
+	// entry to actually run in production — it's the real fix for the
+	// stuck-extraction bug, since an in-process timeout inside the same
+	// request that's already hung has proven unreliable (see that file's
+	// header comment). Three entries, unchanged from before: entity_sync_queue
+	// drain + extraction dead-letter sweep every minute, weekly Sunday
+	// 03:00 UTC audit-log bin purge, daily 05:00 UTC subscription billing.
+	// If THIS deploy also fails on /schedules, the failure is real and
+	// specific to the crons step (not a fluke of the moment this was first
+	// tried) and needs its own diagnosis — check the exact error text in
+	// Cloudflare's build log this time rather than removing the block again.
+	"triggers": {
+		"crons": ["*/1 * * * *", "0 3 * * 0", "0 5 * * *"]
+	},
 	// Workers AI binding — shared Model Gateway provider for Document
 	// Intelligence and Knowledge RAG (see ../document-intelligence/README.md,
 	// ../knowledge-rag/README.md). Not called from anywhere yet in Phase 0;

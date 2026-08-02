@@ -22,6 +22,7 @@ import handler from "./.open-next/worker.js";
 import { drainEntitySyncQueue } from "./src/lib/entity-graph/sync";
 import { purgeDeletedAuditLogEntries } from "./src/lib/admin/audit-log-purge";
 import { triggerCafocusSubscriptionBillingCycle } from "./src/lib/billing/subscription-billing-trigger";
+import { sweepStuckExtractionJobs } from "./src/lib/document-intelligence/dead-letter-sweep";
 
 export default {
   fetch: handler.fetch,
@@ -33,7 +34,14 @@ export default {
   //     siringetbase/entity-graph/data-sync-architecture.md §4, MVP item
   //     #1) — this is what turns sync from "only runs when a human
   //     remembers to POST /api/entity-graph/sync" into an actual
-  //     dependable background job.
+  //     dependable background job — AND, piggybacked on the same
+  //     every-minute fire rather than a 4th distinct cron entry (Workers'
+  //     free-plan cap is 3 Cron Triggers per Worker, and all 3 slots here
+  //     were already spoken for), sweeps any document-intelligence
+  //     extraction job stuck in 'processing' — see
+  //     document-intelligence/dead-letter-sweep.ts's header comment for why
+  //     this needs to run from a wholly separate invocation rather than
+  //     rely on a timeout inside the original stuck request.
   //   "0 3 * * 0" — weekly purge of cafocus/app's admin_audit_log hidden
   //     bin (audit-log-purge.ts's header comment has the full "why here,
   //     not cafocus/app" reasoning).
@@ -54,6 +62,6 @@ export default {
       ctx.waitUntil(triggerCafocusSubscriptionBillingCycle());
       return;
     }
-    ctx.waitUntil(drainEntitySyncQueue());
+    ctx.waitUntil(Promise.all([drainEntitySyncQueue(), sweepStuckExtractionJobs()]));
   },
 };
