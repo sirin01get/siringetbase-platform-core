@@ -16,24 +16,29 @@
 	},
 	// RE-ENABLED (2026-08-02) — was disabled 2026-07-29 after every deploy
 	// attempt failed on the final "deploy triggers to /schedules" API call.
-	// That isolation experiment's other half (does the Worker script itself
-	// go live once /schedules is out of the picture) was confirmed yes —
-	// every code-only deploy since then (most recently the model-gateway.ts
-	// timeout fix) has landed fine with this block removed. Restoring it now
-	// because sweepStuckExtractionJobs() (worker.ts's scheduled() handler,
-	// document-intelligence/dead-letter-sweep.ts) needs the every-minute
-	// entry to actually run in production — it's the real fix for the
-	// stuck-extraction bug, since an in-process timeout inside the same
-	// request that's already hung has proven unreliable (see that file's
-	// header comment). Three entries, unchanged from before: entity_sync_queue
-	// drain + extraction dead-letter sweep every minute, weekly Sunday
-	// 03:00 UTC audit-log bin purge, daily 05:00 UTC subscription billing.
-	// If THIS deploy also fails on /schedules, the failure is real and
-	// specific to the crons step (not a fluke of the moment this was first
-	// tried) and needs its own diagnosis — check the exact error text in
-	// Cloudflare's build log this time rather than removing the block again.
+	// Root cause found on this attempt, straight from the deploy log:
+	// "invalid cron string: 0 3 * * 0 [code: 10100]". Cloudflare's Cron
+	// Trigger weekday field is 1-7 (1=Sunday...7=Saturday) via Quartz-style
+	// syntax, NOT the 0=Sunday convention standard UNIX cron (and every
+	// other scheduler this codebase's authors have used) assumes — see
+	// https://developers.cloudflare.com/workers/configuration/cron-triggers/#supported-cron-expressions.
+	// "0 3 * * 0" was simply never valid on this platform; it had nothing to
+	// do with subrequests, trigger counts, or any transient Cloudflare API
+	// issue — every theory this file's history floated before landing here.
+	// Fixed by writing "SUN" instead of a bare number, per Cloudflare's own
+	// docs recommendation ("to avoid ambiguity you may prefer to use the
+	// three-letter abbreviations"), which sidesteps the numbering mismatch
+	// entirely rather than trading one magic number for another. Restoring
+	// this block now because sweepStuckExtractionJobs() (worker.ts's
+	// scheduled() handler, document-intelligence/dead-letter-sweep.ts) needs
+	// the every-minute entry to actually run in production — it's the real
+	// fix for the stuck-extraction bug, since an in-process timeout inside
+	// the same request that's already hung has proven unreliable (see that
+	// file's header comment). Three entries: entity_sync_queue drain +
+	// extraction dead-letter sweep every minute, weekly Sunday 03:00 UTC
+	// audit-log bin purge, daily 05:00 UTC subscription billing.
 	"triggers": {
-		"crons": ["*/1 * * * *", "0 3 * * 0", "0 5 * * *"]
+		"crons": ["*/1 * * * *", "0 3 * * SUN", "0 5 * * *"]
 	},
 	// Workers AI binding — shared Model Gateway provider for Document
 	// Intelligence and Knowledge RAG (see ../document-intelligence/README.md,
