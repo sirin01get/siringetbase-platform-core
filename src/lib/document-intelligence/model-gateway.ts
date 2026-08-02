@@ -167,10 +167,22 @@ export async function convertToMarkdown(params: {
   contentType: string;
 }): Promise<string> {
   const { env } = getCloudflareContext();
-  const result = await env.AI.toMarkdown({
-    name: params.filename,
-    blob: new Blob([params.bytes], { type: params.contentType }),
-  });
+  // This call was the actual gap in the first pass of this fix: withTimeout()
+  // was added to runVisionModel()/runTextModel() above but NOT here — and a
+  // live verification upload right after that deploy (a plain
+  // text-layer PDF, which extract.ts routes through convertToMarkdown() +
+  // runTextModel(), not the vision/OCR path) sat stuck past the 90s+120s
+  // window with no revert, proving this specific call — Workers AI's
+  // Markdown Conversion service, still "Beta" per Cloudflare's own docs —
+  // is at least as likely a hang point as the two calls already wrapped.
+  const result = await withTimeout(
+    env.AI.toMarkdown({
+      name: params.filename,
+      blob: new Blob([params.bytes], { type: params.contentType }),
+    }),
+    MODEL_CALL_TIMEOUT_MS,
+    "Markdown conversion call"
+  );
   // The binding returns a single ConversionResult when given a single
   // document (not wrapped in an array) — see the "Converting files"
   // example in Cloudflare's docs, which passes an array and gets an array
