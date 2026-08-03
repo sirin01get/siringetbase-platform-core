@@ -21,6 +21,31 @@ import AuthErrorNotice from "@/components/auth/AuthErrorNotice";
 // itself doesn't work (mail scanners burning the single-use code before a
 // human clicks it), and AuthErrorNotice for a graceful expired-link message
 // instead of a raw querystring.
+// supabase.auth.signInWithOtp()/verifyOtp() have no built-in timeout — a
+// slow or stalled connection to Supabase's auth email relay leaves the UI
+// stuck on "Sending…"/"Verifying…" forever with no error ever surfacing.
+// Same failure class already fixed elsewhere in this codebase (retry.ts's
+// AbortController + FETCH_TIMEOUT_MS, model-gateway.ts's withTimeout()
+// around env.AI calls) — applied here via a plain Promise.race since the
+// supabase-js client methods don't accept an AbortSignal.
+const AUTH_TIMEOUT_MS = 20_000;
+
+function withTimeout<T>(promise: Promise<T>, ms: number, timeoutMessage: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(timeoutMessage)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      }
+    );
+  });
+}
+
 export default function AdminSignInForm() {
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
@@ -38,12 +63,20 @@ export default function AdminSignInForm() {
     redirectUrl.searchParams.set("next", next);
 
     const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: redirectUrl.toString() },
-    });
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.signInWithOtp({
+          email,
+          options: { emailRedirectTo: redirectUrl.toString() },
+        }),
+        AUTH_TIMEOUT_MS,
+        "Sending the sign-in email timed out. Check your connection and try again."
+      );
 
-    return { error: error?.message ?? null };
+      return { error: error?.message ?? null };
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : "Something went wrong sending the sign-in email." };
+    }
   }
 
   async function handleSubmit(e: FormEvent) {
@@ -96,11 +129,21 @@ export default function AdminSignInForm() {
     setCodeError(null);
 
     const supabase = createSupabaseBrowserClient();
-    const { error } = await supabase.auth.verifyOtp({ email, token: code, type: "email" });
+    try {
+      const { error } = await withTimeout(
+        supabase.auth.verifyOtp({ email, token: code, type: "email" }),
+        AUTH_TIMEOUT_MS,
+        "Verifying the code timed out. Check your connection and try again."
+      );
 
-    if (error) {
+      if (error) {
+        setCodeStatus("error");
+        setCodeError(error.message);
+        return;
+      }
+    } catch (err) {
       setCodeStatus("error");
-      setCodeError(error.message);
+      setCodeError(err instanceof Error ? err.message : "Something went wrong verifying the code.");
       return;
     }
 
