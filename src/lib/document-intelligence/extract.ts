@@ -10,6 +10,7 @@ import {
   type FallbackProvider,
 } from "./model-gateway";
 import { extractScannedPdfPageImages, mergeExtractedPages, MAX_OCR_PAGES } from "./pdf-ocr";
+import { extractPdfFormFieldText } from "./pdf-form-fields";
 import { validateFields, type FieldValidationIssue } from "./field-validation";
 import { writeExtractionCompletedEvent } from "./events";
 import { getPrimaryProvider } from "./settings";
@@ -235,7 +236,39 @@ export async function extractDocument(params: {
 
   await supabase.from("documents").update({ status: "extraction_queued" }).eq("id", doc.id);
 
-  const instruction = `${template.prompt}\n\nRespond with ONLY a single JSON object matching this schema — no markdown code fences, no explanation before or after it: ${JSON.stringify(template.output_schema)}`;
+  let instruction = `${template.prompt}\n\nRespond with ONLY a single JSON object matching this schema — no markdown code fences, no explanation before or after it: ${JSON.stringify(template.output_schema)}`;
+
+  // Bug fix (logged in pdf-form-fields.ts's header comment) — real Form
+  // 16/16A/26AS/AIS certificates from payroll/TDS software are frequently
+  // Adobe LiveCycle XFA dynamic forms: their actual values live in
+  // AcroForm field entries, NOT in the page's ordinary text layer, so
+  // convertToMarkdown() below (and OpenAI's/Gemini's own native PDF
+  // reading in the fallback path — both take the SAME `instruction`
+  // string as their prompt, see the forcedProvider/runFallbackExtraction
+  // calls below) only ever sees static labels and reports every field
+  // blank, honestly, because it was never given a value to report.
+  // Appending the form's own field values here — once, to the shared
+  // `instruction` every extraction path already uses as its prompt —
+  // fixes every one of those paths in one place rather than duplicating
+  // this per provider. A complete no-op (silently returns unchanged) for
+  // the large majority of documents this pipeline sees that AREN'T
+  // fillable forms — plain scanned images, GST invoices, bank
+  // statements, or (like the earlier form16a test fixture) a flat
+  // non-form PDF all have no AcroForm field tree to extract, so
+  // extractPdfFormFieldText() returns null and this is skipped exactly
+  // as before this existed.
+  if (params.contentType === "application/pdf") {
+    try {
+      const formFieldText = await extractPdfFormFieldText(params.imageBytes);
+      if (formFieldText) {
+        instruction = `${instruction}\n\n${formFieldText}`;
+      }
+    } catch {
+      // Any failure walking this PDF's AcroForm tree (malformed structure,
+      // unpdf parse error) degrades to today's behavior — instruction is
+      // simply left unaugmented, same as a PDF with no form fields at all.
+    }
+  }
 
   let rawText: string | null = null;
   let parsed: unknown = null;
