@@ -537,6 +537,81 @@ export interface Database {
         };
         Update: Partial<Database["siringetbase"]["Tables"]["support_error_reports"]["Insert"]>;
       };
+      // WhatsApp-patterned support chat + feature requests —
+      // 0035_chat_and_feature_requests.sql. Consumed by cafocus/app's
+      // src/lib/chat/service.ts; kept here too for parity with the other
+      // cafocus-written siringetbase-schema tables above.
+      chat_threads: {
+        Row: {
+          id: string;
+          role_profile_id: string;
+          vertical: string;
+          channel: "backoffice" | "herzbeat";
+          user_last_read_at: string | null;
+          staff_last_read_at: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          role_profile_id: string;
+          vertical: string;
+          channel: "backoffice" | "herzbeat";
+          user_last_read_at?: string | null;
+          staff_last_read_at?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["chat_threads"]["Insert"]>;
+      };
+      chat_messages: {
+        Row: {
+          id: string;
+          thread_id: string;
+          sender_role_profile_id: string;
+          sender_kind: "user" | "staff";
+          body: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          thread_id: string;
+          sender_role_profile_id: string;
+          sender_kind: "user" | "staff";
+          body: string;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["chat_messages"]["Insert"]>;
+      };
+      feature_requests: {
+        Row: {
+          id: string;
+          vertical: string;
+          role: string;
+          requester_role_profile_id: string | null;
+          requester_session_id: string;
+          description: string;
+          context: Record<string, unknown>;
+          breadcrumbs: unknown[];
+          screenshot_storage_pointer: string | null;
+          status: "new" | "reviewing" | "planned" | "declined" | "shipped";
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          vertical: string;
+          role: string;
+          requester_role_profile_id?: string | null;
+          requester_session_id: string;
+          description: string;
+          context?: Record<string, unknown>;
+          breadcrumbs?: unknown[];
+          screenshot_storage_pointer?: string | null;
+          status?: "new" | "reviewing" | "planned" | "declined" | "shipped";
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["feature_requests"]["Insert"]>;
+      };
       // Billing rate card — 0008_billing_rate_cards.sql. See
       // ../../../billing/README.md and src/lib/billing/rate-card.ts.
       // "Platform charges" — the percentage cut taken at payout.
