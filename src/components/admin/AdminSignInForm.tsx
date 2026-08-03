@@ -62,8 +62,15 @@ export default function AdminSignInForm() {
     const redirectUrl = new URL("/auth/callback", window.location.origin);
     redirectUrl.searchParams.set("next", next);
 
-    const supabase = createSupabaseBrowserClient();
+    // createSupabaseBrowserClient() itself can throw synchronously (e.g. a
+    // missing NEXT_PUBLIC_* env var at build time) — that exception has to
+    // be inside this try too. It previously sat above the try block, so it
+    // became an unhandled promise rejection that never reached handleSubmit's
+    // setStatus("error"), leaving the UI stuck on "Sending…" forever even
+    // with the timeout in place below (the timeout never got a chance to
+    // fire because nothing had started yet).
     try {
+      const supabase = createSupabaseBrowserClient();
       const { error } = await withTimeout(
         supabase.auth.signInWithOtp({
           email,
@@ -128,8 +135,8 @@ export default function AdminSignInForm() {
     setCodeStatus("verifying");
     setCodeError(null);
 
-    const supabase = createSupabaseBrowserClient();
     try {
+      const supabase = createSupabaseBrowserClient();
       const { error } = await withTimeout(
         supabase.auth.verifyOtp({ email, token: code, type: "email" }),
         AUTH_TIMEOUT_MS,
