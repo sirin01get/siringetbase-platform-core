@@ -15,13 +15,20 @@ const eslintConfig = [
     // TS-aware project (next/typescript) would fail on a module that
     // legitimately doesn't exist yet at lint time.
     //
-    // model-gateway.ts and rate-limit.ts are excluded because both carry a
-    // genuine, necessary `// @ts-nocheck` (getCloudflareContext()'s types
-    // collide with this project's "dom" lib — see each file's own header
-    // comment) that `@typescript-eslint/ban-ts-comment` bans outright, with
-    // no `allow-with-description` override configured. File-level exclusion
-    // is the existing pattern for this, not a rule-level exception — same
-    // fix needed for rate-limit.ts's cafocus/app twin, tracked separately.
+    // model-gateway.ts, rate-limit.ts, and benchmark.ts are excluded because
+    // each carries a genuine, necessary `// @ts-nocheck`
+    // (getCloudflareContext()'s types collide with this project's "dom"
+    // lib — see each file's own header comment) that
+    // `@typescript-eslint/ban-ts-comment` bans outright, with no
+    // `allow-with-description` override configured. File-level exclusion is
+    // the existing pattern for this, not a rule-level exception — same fix
+    // needed for rate-limit.ts's cafocus/app twin, tracked separately.
+    // benchmark.ts's `// @ts-nocheck` broke a real Cloudflare Pages build
+    // (`next build`'s lint step, not `tsc --noEmit`, which doesn't run
+    // ESLint at all — that's why this wasn't caught before the deploy) the
+    // first time it shipped without this exclusion; add any FUTURE file
+    // that needs the same getCloudflareContext() workaround here too,
+    // not just to tsconfig.json, or the same build failure repeats.
     ignores: [
       ".next/**",
       ".open-next/**",
@@ -29,6 +36,7 @@ const eslintConfig = [
       "next-env.d.ts",
       "worker.ts",
       "src/lib/document-intelligence/model-gateway.ts",
+      "src/lib/document-intelligence/benchmark.ts",
       "src/lib/security/rate-limit.ts",
     ],
   },
