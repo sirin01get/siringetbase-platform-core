@@ -16,5 +16,23 @@
 -- row should never retroactively fail an otherwise-successful extraction)
 -- — so this same bug has been silently dropping every extraction.completed
 -- event since 0032 first shipped, with no error anywhere to notice it by.
-grant all on siringetbase.extraction_events to service_role;
-grant all on siringetbase.document_intelligence_settings to service_role;
+--
+-- Wrapped in to_regclass() existence checks — this repo's migrations turned
+-- out NOT to have been applied strictly in order against the live database
+-- (0033 had run, granting its own table fine via a later attempt, but 0032
+-- itself had not, so a plain `grant ... on siringetbase.extraction_events`
+-- here would fail outright with "relation does not exist" rather than the
+-- permission error it's meant to fix). Making this migration tolerant of
+-- that instead of assuming a clean, in-order history — a grant on a table
+-- that isn't there yet is simply skipped, not an error, and takes effect
+-- retroactively for nothing since there's nothing to grant on; re-running
+-- this file after 0032 finally does apply grants it correctly.
+do $$
+begin
+  if to_regclass('siringetbase.extraction_events') is not null then
+    execute 'grant all on siringetbase.extraction_events to service_role';
+  end if;
+  if to_regclass('siringetbase.document_intelligence_settings') is not null then
+    execute 'grant all on siringetbase.document_intelligence_settings to service_role';
+  end if;
+end $$;
