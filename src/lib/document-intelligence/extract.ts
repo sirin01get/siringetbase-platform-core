@@ -273,6 +273,24 @@ export async function extractDocument(params: {
   let rawText: string | null = null;
   let parsed: unknown = null;
   let ocrPageCount: number | null = null;
+  // Diagnostic-only: the intermediate convertToMarkdown() output for a
+  // non-scanned, non-vision PDF (runTextModel's actual input), captured so
+  // a completed-but-suspiciously-empty extraction can be root-caused after
+  // the fact — added while chasing exactly that case: a job completed with
+  // valid JSON but every field genuinely blank, and there was previously no
+  // way to see whether the markdown handed to the model was garbled/empty
+  // or fine (meaning the model itself failed to read it). Never affects
+  // extraction behavior, only what's captured in raw_output for admins.
+  // Held in a mutable object rather than reassigning a plain `let` — same
+  // "closures don't narrow a captured outer variable" TS limitation
+  // documented above for jobId/docId/templateMaxTokens, which for THIS
+  // variable (assigned from inside runPrimaryExtraction, then read after
+  // it returns) actually surfaces as a real compile error (TS narrows the
+  // post-call read to `never`), not just a missed narrowing opportunity. A
+  // one-property object sidesteps it the same way those other values
+  // sidestep the null-narrowing problem, just for a mutable field instead
+  // of a fixed one.
+  const markdownDebugRef: { value: string | null } = { value: null };
   // Phase 1 item 3 (structured per-attempt logging) — which provider
   // actually produced rawText. Stays "workers_ai" unless the fallback
   // chain below (Phase 4, model-gateway.ts's runFallbackExtraction()) is
@@ -348,6 +366,7 @@ export async function extractDocument(params: {
       // real text layer and converts fine; a scanned one comes back
       // near-empty instead.
       const looksLikeScannedPdf = params.contentType === "application/pdf" && markdown.replace(/\s+/g, "").length < 40;
+      markdownDebugRef.value = markdown;
 
       if (looksLikeScannedPdf) {
         // pdf-ocr.ts's fallback: pull the embedded page images back out and
@@ -530,6 +549,14 @@ export async function extractDocument(params: {
   // shape doesn't change from before this feature existed.
   const fieldValidationMeta = fieldIssues.length > 0 ? { fieldValidationIssues: fieldIssues } : {};
 
+  // Diagnostic-only (see markdownDebug's own declaration comment above) —
+  // truncated to keep this jsonb column from ballooning on a large source
+  // document; 3000 chars is enough to see whether the converted markdown
+  // actually contained the document's real content or came back garbled/
+  // near-empty, which is the actual question this exists to answer.
+  const markdownDebugMeta =
+    markdownDebugRef.value !== null ? { markdownExcerpt: markdownDebugRef.value.slice(0, 3000) } : {};
+
   // Phase 1 item 3: durationMs alongside the existing created_at/completed_at
   // pair, rather than replacing them — a per-attempt wall-clock figure that
   // doesn't require a reader to subtract two timestamps themselves, and
@@ -541,7 +568,7 @@ export async function extractDocument(params: {
     .from("extraction_jobs")
     .update({
       status: "completed",
-      raw_output: { text: rawText, durationMs, ...ocrMeta, ...fieldValidationMeta },
+      raw_output: { text: rawText, durationMs, ...ocrMeta, ...fieldValidationMeta, ...markdownDebugMeta },
       interpretation: parsed as Record<string, unknown>,
       confidence,
       model_provider: modelProvider,
