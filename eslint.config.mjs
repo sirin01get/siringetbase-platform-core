@@ -15,8 +15,8 @@ const eslintConfig = [
     // TS-aware project (next/typescript) would fail on a module that
     // legitimately doesn't exist yet at lint time.
     //
-    // model-gateway.ts, rate-limit.ts, and benchmark.ts are excluded because
-    // each carries a genuine, necessary `// @ts-nocheck`
+    // model-gateway.ts, rate-limit.ts, benchmark.ts, and defer.ts are
+    // excluded because each carries a genuine, necessary `// @ts-nocheck`
     // (getCloudflareContext()'s types collide with this project's "dom"
     // lib — see each file's own header comment) that
     // `@typescript-eslint/ban-ts-comment` bans outright, with no
@@ -38,6 +38,7 @@ const eslintConfig = [
       "src/lib/document-intelligence/model-gateway.ts",
       "src/lib/document-intelligence/benchmark.ts",
       "src/lib/security/rate-limit.ts",
+      "src/lib/comms/defer.ts",
     ],
   },
 ];

@@ -3,8 +3,9 @@ import { env } from "@/config/env";
 import { verifySendEmailHookSignature, WebhookVerificationError } from "@/lib/comms/verify-webhook";
 import { getEmailSender } from "@/lib/comms/provider-registry";
 import { logDispatchAttempt, updateDispatchResult } from "@/lib/comms/log";
+import { deferAfterResponse } from "@/lib/comms/defer";
 import { TemplateNotFoundError } from "@/lib/comms/templates/registry";
-import type { SendEmailRequest } from "@/lib/comms/types";
+import type { SendEmailRequest, SendEmailResult } from "@/lib/comms/types";
 import { rateLimitOrNull } from "@/lib/security/rate-limit";
 
 // Supabase Auth's Send Email Hook — registered once, dashboard-side, at
@@ -141,16 +142,21 @@ export async function POST(req: NextRequest) {
     },
   };
 
-  const dispatchId = await logDispatchAttempt(sendRequest);
-
+  // notification_dispatch logging (logDispatchAttempt/updateDispatchResult)
+  // is deliberately NOT awaited on this critical path — see defer.ts's
+  // header comment. Supabase's Send Email Hook has a strict ~5s SLA
+  // ("Failed to reach hook within maximum time of 5.000000 seconds" is
+  // GoTrue's own error when a hook misses it); the two Postgres round-trips
+  // this logging needs were previously sequential/awaited alongside the
+  // Resend call itself, which was long enough to blow that budget on a cold
+  // Worker start. The insert->update pairing still has to happen in order
+  // (the update needs the row id the insert returns), so both are chained
+  // into a single promise and handed to deferAfterResponse() together —
+  // only the Resend send itself remains in the awaited critical path.
+  let result: SendEmailResult;
   try {
     const sender = getEmailSender();
-    const result = await sender.send(sendRequest);
-    await updateDispatchResult(dispatchId, result);
-
-    if (!result.success) {
-      return errorResponse(500, result.failureReason ?? "Email provider reported a failed send");
-    }
+    result = await sender.send(sendRequest);
   } catch (err) {
     const message =
       err instanceof TemplateNotFoundError
@@ -158,14 +164,26 @@ export async function POST(req: NextRequest) {
         : err instanceof Error
           ? err.message
           : "Unknown error sending email";
-    await updateDispatchResult(dispatchId, {
-      success: false,
-      providerMessageId: "",
-      status: "failed",
-      failureReason: message,
-      rawResponse: {},
-    });
+    deferAfterResponse(
+      logDispatchAttempt(sendRequest).then((dispatchId) =>
+        updateDispatchResult(dispatchId, {
+          success: false,
+          providerMessageId: "",
+          status: "failed",
+          failureReason: message,
+          rawResponse: {},
+        })
+      )
+    );
     return errorResponse(500, message);
+  }
+
+  deferAfterResponse(
+    logDispatchAttempt(sendRequest).then((dispatchId) => updateDispatchResult(dispatchId, result))
+  );
+
+  if (!result.success) {
+    return errorResponse(500, result.failureReason ?? "Email provider reported a failed send");
   }
 
   // A bare `NextResponse(null, ...)` sends no Content-Type header at all —
