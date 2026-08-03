@@ -77,7 +77,18 @@ function shortLabel(fullPath: string): string {
 // wraps this in the same "degrade to today's behavior on any failure"
 // posture as pdf-ocr.ts's extractScannedPdfPageImages().
 export async function extractPdfFormFieldText(bytes: ArrayBuffer): Promise<string | null> {
-  const pdf = await getDocumentProxy(new Uint8Array(bytes));
+  // Bug fix (found via live testing): unpdf's getDocumentProxy() hands the
+  // bytes to pdf.js, which transfers the underlying ArrayBuffer to its
+  // worker via structured-clone transfer, DETACHING it — not copying it.
+  // `new Uint8Array(bytes)` here is just a view over the SAME buffer
+  // object extract.ts holds as `params.imageBytes` and reuses afterward
+  // for every other provider (Workers AI / OpenAI / Gemini). Without this
+  // slice(), every one of those downstream calls fails with "Cannot
+  // perform Construct on a detached ArrayBuffer" the moment this function
+  // runs first — confirmed live against the deployed fix. bytes.slice(0)
+  // makes a real copy so the original buffer this function was handed is
+  // untouched and still usable by every caller after this returns.
+  const pdf = await getDocumentProxy(new Uint8Array(bytes.slice(0)));
   const fields = await pdf.getFieldObjects();
   if (!fields) return null;
 
