@@ -4,12 +4,15 @@ import {
   runTextModel,
   convertToMarkdown,
   runFallbackExtraction,
+  runOpenAiExtraction,
+  runGeminiExtraction,
   isFallbackSupportedContentType,
   type FallbackProvider,
 } from "./model-gateway";
 import { extractScannedPdfPageImages, mergeExtractedPages, MAX_OCR_PAGES } from "./pdf-ocr";
 import { validateFields, type FieldValidationIssue } from "./field-validation";
 import { writeExtractionCompletedEvent } from "./events";
+import { getPrimaryProvider } from "./settings";
 
 // Genuine raster photos go straight to the vision-instruct model unchanged
 // (image bytes + prompt). Everything else this pipeline realistically sees
@@ -381,48 +384,79 @@ export async function extractDocument(params: {
     }
   }
 
-  try {
-    await runPrimaryExtraction();
-  } catch (primaryErr) {
-    const primaryMessage = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+  // Owner-requested runtime A/B toggle (siringetbase.document_intelligence_settings,
+  // see ./settings.ts) — lets a fresh extraction be routed straight to
+  // OpenAI or Gemini for a deliberate performance comparison, rather than
+  // only reactively via the fallback chain below once Workers AI has
+  // already failed. Reads "workers_ai" (today's original behavior,
+  // unchanged) unless an admin has explicitly flipped it.
+  const configuredProvider = await getPrimaryProvider(supabase);
+  const forcedProvider =
+    configuredProvider !== "workers_ai" && isFallbackSupportedContentType(params.contentType) ? configuredProvider : null;
 
-    // Phase 4 (../../../document-intelligence/PERFORMANCE_STRATEGY.md item
-    // 10): only attempt OpenAI/Gemini for content types either provider can
-    // actually read natively — see model-gateway.ts's
-    // isFallbackSupportedContentType() for the full reasoning (PDF + raster
-    // images only, not csv/html/docx/xlsx). Everything else falls straight
-    // through to the original failure below, unchanged from before this
-    // existed.
-    if (!isFallbackSupportedContentType(params.contentType)) {
-      return await writeExtractionFailure(primaryMessage, { error: primaryMessage });
-    }
-
+  if (forcedProvider) {
+    // Deliberate provider choice for comparison testing — bypasses Workers
+    // AI (and its circuit breaker) entirely, and does NOT fall through to
+    // any other provider if this one fails. An explicit "test provider X"
+    // request should surface provider X's own real failure, not silently
+    // paper over it with a fallback the person testing didn't ask for.
     try {
-      const fallback = await runFallbackExtraction({
+      const runner = forcedProvider === "openai" ? runOpenAiExtraction : runGeminiExtraction;
+      rawText = await runner({
         bytes: params.imageBytes,
         contentType: params.contentType,
         prompt: instruction,
         maxTokens: templateMaxTokens,
       });
-      rawText = fallback.rawText;
-      modelProvider = fallback.provider;
-      // parsed stays null here — falls into the same strip+parse block
-      // below every other single-response path (runVisionModel/
-      // runTextModel) already goes through, so a fallback response gets
-      // identical JSON-cleanup handling to a Workers AI one.
-    } catch (fallbackErr) {
-      // Every configured fallback (or none at all) failed. Surface the
-      // ORIGINAL Workers AI error, not the fallback error — that's the
-      // real root cause a reviewer needs, per model-gateway.ts's own
-      // reasoning; the fallback attempt and its own failure reason still
-      // ride along in raw_output for anyone who wants the detail, just not
-      // as the headline reason.
-      const fallbackMessage = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
-      return await writeExtractionFailure(primaryMessage, {
-        error: primaryMessage,
-        fallbackAttempted: true,
-        fallbackError: fallbackMessage,
-      });
+      modelProvider = forcedProvider;
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return await writeExtractionFailure(message, { error: message, forcedProvider });
+    }
+  } else {
+    try {
+      await runPrimaryExtraction();
+    } catch (primaryErr) {
+      const primaryMessage = primaryErr instanceof Error ? primaryErr.message : String(primaryErr);
+
+      // Phase 4 (../../../document-intelligence/PERFORMANCE_STRATEGY.md item
+      // 10): only attempt OpenAI/Gemini for content types either provider can
+      // actually read natively — see model-gateway.ts's
+      // isFallbackSupportedContentType() for the full reasoning (PDF + raster
+      // images only, not csv/html/docx/xlsx). Everything else falls straight
+      // through to the original failure below, unchanged from before this
+      // existed.
+      if (!isFallbackSupportedContentType(params.contentType)) {
+        return await writeExtractionFailure(primaryMessage, { error: primaryMessage });
+      }
+
+      try {
+        const fallback = await runFallbackExtraction({
+          bytes: params.imageBytes,
+          contentType: params.contentType,
+          prompt: instruction,
+          maxTokens: templateMaxTokens,
+        });
+        rawText = fallback.rawText;
+        modelProvider = fallback.provider;
+        // parsed stays null here — falls into the same strip+parse block
+        // below every other single-response path (runVisionModel/
+        // runTextModel) already goes through, so a fallback response gets
+        // identical JSON-cleanup handling to a Workers AI one.
+      } catch (fallbackErr) {
+        // Every configured fallback (or none at all) failed. Surface the
+        // ORIGINAL Workers AI error, not the fallback error — that's the
+        // real root cause a reviewer needs, per model-gateway.ts's own
+        // reasoning; the fallback attempt and its own failure reason still
+        // ride along in raw_output for anyone who wants the detail, just not
+        // as the headline reason.
+        const fallbackMessage = fallbackErr instanceof Error ? fallbackErr.message : String(fallbackErr);
+        return await writeExtractionFailure(primaryMessage, {
+          error: primaryMessage,
+          fallbackAttempted: true,
+          fallbackError: fallbackMessage,
+        });
+      }
     }
   }
 

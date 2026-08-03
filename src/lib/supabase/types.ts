@@ -397,6 +397,24 @@ export interface Database {
         };
         Update: Partial<Database["siringetbase"]["Tables"]["extraction_events"]["Insert"]>;
       };
+      // 0033_document_intelligence_settings.sql — runtime-switchable
+      // primary extraction provider, for A/B performance-comparison
+      // testing. See ../document-intelligence/settings.ts.
+      document_intelligence_settings: {
+        Row: {
+          id: string;
+          primary_provider: "workers_ai" | "openai" | "gemini";
+          updated_at: string;
+          updated_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          primary_provider?: "workers_ai" | "openai" | "gemini";
+          updated_at?: string;
+          updated_by?: string | null;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["document_intelligence_settings"]["Insert"]>;
+      };
       // Referrals — 0005_referrals.sql. See ../../../referrals/README.md for
       // the full design (three referral_type values, one shared ledger).
       referrals: {

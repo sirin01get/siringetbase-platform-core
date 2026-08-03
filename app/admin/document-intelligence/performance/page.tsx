@@ -5,9 +5,11 @@ import AdminGate from "@/components/admin/AdminGate";
 import {
   Badge,
   Banner,
+  buttonPrimary,
   buttonSecondary,
   Card,
   EmptyState,
+  labelClass,
   PageHeader,
   SectionHeading,
   Spinner,
@@ -15,6 +17,14 @@ import {
   th,
   trBody,
 } from "@/components/admin/AdminUI";
+
+type PrimaryProvider = "workers_ai" | "openai" | "gemini";
+
+interface DocumentIntelligenceSettings {
+  primaryProvider: PrimaryProvider;
+  updatedAt: string;
+  updatedByLabel: string | null;
+}
 
 interface ProviderBreakdownRow {
   provider: string;
@@ -96,6 +106,12 @@ function PerformancePageInner() {
   const [error, setError] = useState<string | null>(null);
   const [expandedField, setExpandedField] = useState<string | null>(null);
 
+  const [settings, setSettings] = useState<DocumentIntelligenceSettings | null>(null);
+  const [settingsSelection, setSettingsSelection] = useState<PrimaryProvider>("workers_ai");
+  const [settingsSaving, setSettingsSaving] = useState(false);
+  const [settingsError, setSettingsError] = useState<string | null>(null);
+  const [settingsInfo, setSettingsInfo] = useState<string | null>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
     setError(null);
@@ -118,9 +134,38 @@ function PerformancePageInner() {
     setLoading(false);
   }, []);
 
+  const loadSettings = useCallback(async () => {
+    const res = await fetch("/api/admin/document-intelligence/settings");
+    const body = (await res.json().catch(() => ({}))) as { status: string; settings?: DocumentIntelligenceSettings; message?: string };
+    if (body.status === "ok" && body.settings) {
+      setSettings(body.settings);
+      setSettingsSelection(body.settings.primaryProvider);
+    }
+  }, []);
+
   useEffect(() => {
     void load();
-  }, [load]);
+    void loadSettings();
+  }, [load, loadSettings]);
+
+  async function handleSaveSettings() {
+    setSettingsSaving(true);
+    setSettingsError(null);
+    setSettingsInfo(null);
+    const res = await fetch("/api/admin/document-intelligence/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ primary_provider: settingsSelection }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { status: string; message?: string };
+    if (body.status !== "ok") {
+      setSettingsError(body.message ?? "Could not update the primary provider.");
+    } else {
+      setSettingsInfo(`Primary provider switched to ${providerLabel(settingsSelection)} — takes effect on the next extraction, no redeploy needed.`);
+      await loadSettings();
+    }
+    setSettingsSaving(false);
+  }
 
   return (
     <main className="mx-auto max-w-5xl px-6 py-10">
@@ -146,6 +191,49 @@ function PerformancePageInner() {
       />
 
       {error && <Banner tone="red" className="mb-5">{error}</Banner>}
+
+      <Card className="mb-8 p-5">
+        <div className="mb-1 text-sm font-semibold text-slate-900">Primary extraction provider</div>
+        <p className="mb-3 text-sm text-slate-500">
+          Which provider a FRESH extraction goes to first — default is Workers AI (Cloudflare), same as before this
+          existed. Switching to OpenAI or Gemini here bypasses Workers AI entirely (for PDF/image uploads) so you can
+          compare a provider head-to-head, not just see it kick in reactively as a fallback. Takes effect
+          immediately, no redeploy. Requires the matching API key (<code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">OPENAI_API_KEY</code>{" "}
+          / <code className="rounded bg-slate-100 px-1 py-0.5 text-[0.85em]">GEMINI_API_KEY</code>) already set as a Cloudflare secret — if it isn&apos;t, an
+          extraction routed there will fail outright rather than silently falling back.
+        </p>
+        {settingsError && <Banner tone="red" className="mb-3">{settingsError}</Banner>}
+        {settingsInfo && <Banner tone="green" className="mb-3">{settingsInfo}</Banner>}
+        <div className="flex flex-wrap items-end gap-3">
+          <label className={labelClass}>
+            Provider
+            <select
+              value={settingsSelection}
+              onChange={(e) => setSettingsSelection(e.target.value as PrimaryProvider)}
+              className="mt-1.5 block rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-900 focus:border-slate-500 focus:outline-none focus:ring-2 focus:ring-slate-100"
+            >
+              <option value="workers_ai">Workers AI (Cloudflare) — default</option>
+              <option value="openai">OpenAI</option>
+              <option value="gemini">Gemini</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => void handleSaveSettings()} disabled={settingsSaving} className={buttonPrimary}>
+            {settingsSaving ? (
+              <span className="flex items-center gap-2">
+                <Spinner /> Saving…
+              </span>
+            ) : (
+              "Switch provider"
+            )}
+          </button>
+          {settings && (
+            <span className="pb-2 text-xs text-slate-500">
+              Currently: <strong className="font-semibold text-slate-700">{providerLabel(settings.primaryProvider)}</strong>
+              {settings.updatedByLabel && ` — last changed by ${settings.updatedByLabel}`}
+            </span>
+          )}
+        </div>
+      </Card>
 
       <div className="mb-5 flex justify-end">
         <button type="button" onClick={() => void load()} disabled={loading} className={buttonSecondary}>
