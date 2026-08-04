@@ -196,6 +196,10 @@ function referralCaClientInvite(data: Record<string, unknown>): RenderedEmail {
         <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
           Takes about 30 seconds — no password needed, just your email to sign in.
         </p>
+        <p style="margin:8px 0 0;font-size:13px;color:#94a3b8;">
+          Have a question before you accept? Just reply to this email — it goes straight to
+          ${escapeHtml(firmName)}.
+        </p>
         ${
           note
             ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border-radius:10px;margin:20px 0 0;">
@@ -225,7 +229,7 @@ function referralCaClientInvite(data: Record<string, unknown>): RenderedEmail {
     html: emailShell({ previewText: `${firmName} invited you to CA Focus`, bodyHtml }),
     text: `${firmName} is an ICAI-verified CA on Siringet and invited you to CA Focus for ${serviceTypeDisplayName}. Nothing to pay or sign right now.${
       note ? `\n\nA note from ${firmName}: "${note}"` : ""
-    }\n\nAccept your invite (takes about 30 seconds, no password needed): ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
+    }\n\nAccept your invite (takes about 30 seconds, no password needed): ${inviteLink}\n\nHave a question before you accept? Just reply to this email — it goes straight to ${firmName}.\n\nIf you weren't expecting this, you can safely ignore this email.`,
   };
 }
 

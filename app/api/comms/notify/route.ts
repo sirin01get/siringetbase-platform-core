@@ -27,6 +27,12 @@ interface NotifyRequestBody {
   role: string;
   triggerEvent: string;
   templateData: Record<string, unknown>;
+  // Optional — see ../../../src/lib/comms/types.ts's SendEmailRequest.replyTo
+  // header comment. Passed straight through to the adapter; this route does
+  // no validation on it beyond what SendEmailRequest itself expects (a
+  // plain email string), same trust level as `to` for a secret-header-
+  // protected internal caller.
+  replyTo?: string;
 }
 
 function errorResponse(httpCode: number, message: string) {
@@ -73,6 +79,7 @@ export async function POST(req: NextRequest) {
     role: body.role,
     triggerEvent: body.triggerEvent,
     templateData: body.templateData ?? {},
+    ...(body.replyTo ? { replyTo: body.replyTo } : {}),
   };
 
   try {

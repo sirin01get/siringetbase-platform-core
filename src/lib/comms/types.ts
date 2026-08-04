@@ -14,6 +14,16 @@ export interface SendEmailRequest {
   // ever reaching an adapter's send().
   triggerEvent: string;
   templateData: Record<string, unknown>;
+  // Optional — when set, a reply lands with this address, not Siringet's
+  // own from-address (Resend supports this natively; see
+  // ./adapters/resend.ts's send()). Only set this when a real person is on
+  // the other end and a reply should reach them directly — e.g. a CA
+  // inviting their own client (cafocus/app's
+  // app/api/ca/invite-client/route.ts passes the inviting CA's own
+  // user.email). Leave unset for system-generated/internal triggerEvents
+  // (verification.*, subscription.payment_due, support.*) where a reply
+  // has nowhere sensible to go.
+  replyTo?: string;
 }
 
 export interface SendEmailResult {

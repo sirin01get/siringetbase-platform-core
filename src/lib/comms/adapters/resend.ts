@@ -22,7 +22,13 @@ export function createResendAdapter(config: ResendAdapterConfig): EmailSenderPor
   return {
     providerName: "resend",
     async send(request: SendEmailRequest): Promise<SendEmailResult> {
-      const render = getTemplate({
+      // getTemplate() is async now — it checks siringetbase.comms_templates
+      // for a business_admin-edited override before falling back to the
+      // compiled-in renderer (see ../templates/registry.ts's header
+      // comment and ../templates/store.ts). This is the sole call site of
+      // getTemplate() in the whole codebase, so that's the only signature
+      // change this ripples out to.
+      const render = await getTemplate({
         vertical: request.vertical,
         role: request.role,
         triggerEvent: request.triggerEvent,
@@ -38,6 +44,13 @@ export function createResendAdapter(config: ResendAdapterConfig): EmailSenderPor
         body: JSON.stringify({
           from: config.fromAddress,
           to: [request.to],
+          // Resend's native reply-to param — see ../types.ts's
+          // SendEmailRequest.replyTo header comment for when this is (and
+          // isn't) set. Omitted entirely rather than sent as undefined/
+          // empty when the caller didn't supply one, so a reply falls back
+          // to Resend's own default (replying to config.fromAddress)
+          // exactly as it did before this field existed.
+          ...(request.replyTo ? { reply_to: request.replyTo } : {}),
           subject: rendered.subject,
           html: rendered.html,
           text: rendered.text,

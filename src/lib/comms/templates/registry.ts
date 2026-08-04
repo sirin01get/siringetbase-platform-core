@@ -8,6 +8,7 @@ import type { RenderedEmail, TemplateKey } from "../types";
 import { CA_TEMPLATES, CLIENT_TEMPLATES, PROSPECT_TEMPLATES } from "./ca";
 import { FALLBACK_TEMPLATES } from "./fallback";
 import { INTERNAL_TEMPLATES } from "./support";
+import { getCommsTemplate, renderCommsTemplate } from "./store";
 
 // vertical -> role -> triggerEvent -> renderer
 const REGISTRY: Record<string, Record<string, Record<string, (data: Record<string, unknown>) => RenderedEmail>>> = {
@@ -48,10 +49,34 @@ export class TemplateNotFoundError extends Error {}
 // Never falls through silently past a *found-but-missing-triggerEvent* case
 // inside a real vertical/role entry — that's a real gap worth erroring on,
 // distinct from "this role has no templates authored at all yet."
-export function getTemplate(key: TemplateKey): (data: Record<string, unknown>) => RenderedEmail {
+// Async since 0036_comms_templates.sql (comms/README.md's Rollout Plan step
+// 6) — checks siringetbase.comms_templates for a business_admin-edited
+// override of the exact (vertical, role, triggerEvent) tier BEFORE falling
+// through to the compiled-in REGISTRY entry, so a saved edit takes effect
+// on the very next send with no redeploy. Deliberately scoped to that one
+// tier only — see the migration's header comment for why
+// INTERNAL_TEMPLATES/FALLBACK_TEMPLATES stay compiled-only for now.
+//
+// A DB read failure here (network blip, Supabase hiccup) falls back to the
+// compiled-in copy rather than failing the send outright — an email going
+// out with last-redeploy's copy instead of an admin's latest edit is a far
+// smaller problem than an email not going out at all.
+export async function getTemplate(key: TemplateKey): Promise<(data: Record<string, unknown>) => RenderedEmail> {
   const internal = INTERNAL_TEMPLATES[key.triggerEvent];
   if (internal) {
     return internal;
+  }
+
+  try {
+    const dbRow = await getCommsTemplate(key.vertical, key.role, key.triggerEvent);
+    if (dbRow) {
+      return (data: Record<string, unknown>) => renderCommsTemplate(dbRow, data);
+    }
+  } catch (err) {
+    console.error(
+      `comms_templates lookup failed for vertical="${key.vertical}" role="${key.role}" triggerEvent="${key.triggerEvent}" — falling back to compiled-in copy.`,
+      err
+    );
   }
 
   const roleTemplates = REGISTRY[key.vertical]?.[key.role];
