@@ -120,6 +120,83 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
   };
 }
 
+// A CA inviting an *existing* client they already serve onto the platform
+// for a specific, already-agreed engagement — distinct from
+// referralMarketerInvite() above, which is the generic "someone thinks
+// you'd be a great fit" invite reused by the self-service invite flow and
+// the admin invite tool. Registered separately (as "referral.ca_client_invite",
+// under the "individual"/"smb_owner" role buckets — see ../templates/registry.ts)
+// so branding this one doesn't change copy on those other two flows, which
+// have no service/fee context to reference. Deliberately no money mentioned
+// here (no fee amount, no "escrow" framing) — the owner's ask was to keep
+// this invite about the working relationship, not a transaction; the actual
+// fee is disclosed once the client is inside the product, on the
+// engagement itself. Sent from cafocus/app's
+// app/api/ca/invite-client/route.ts.
+function referralCaClientInvite(data: Record<string, unknown>): RenderedEmail {
+  const inviteLink = String(data.inviteLink ?? "");
+  const firmName = data.firmName ? String(data.firmName) : "A CA on Siringet";
+  const serviceTypeDisplayName = data.serviceTypeDisplayName ? String(data.serviceTypeDisplayName) : "your filing";
+  const note = data.note ? String(data.note) : null;
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:${BRAND};">
+          CA Focus
+        </p>
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
+          You're invited to work with ${escapeHtml(firmName)}
+        </h1>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+          <strong style="color:#0f172a;">${escapeHtml(firmName)}</strong> has invited you to handle your
+          <strong style="color:#0f172a;">${escapeHtml(serviceTypeDisplayName)}</strong> on CA Focus. Once you
+          accept, your documents, deadlines, and this engagement all live in one place — no
+          re-explaining your situation over email. Release your payment once work is delivered.
+        </p>
+        ${
+          note
+            ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border-radius:10px;margin:0 0 24px;">
+                 <tr>
+                   <td style="padding:14px 16px;font-size:14px;color:#334155;">
+                     A note from ${escapeHtml(firmName)}: &ldquo;${escapeHtml(note)}&rdquo;
+                   </td>
+                 </tr>
+               </table>`
+            : ""
+        }
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="border-radius:10px;background:${BRAND};">
+              <a href="${escapeHtml(inviteLink)}"
+                 style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
+                Accept invite &amp; get started
+              </a>
+            </td>
+          </tr>
+        </table>
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
+          If you weren't expecting this, you can safely ignore this email.
+        </p>
+      </td>
+    </tr>
+    <tr>
+      <td style="padding:20px 32px;background:#fdf2f8;border-top:1px solid #fce7f3;">
+        <p style="margin:0;font-size:12px;color:#9d174d;">
+          Precision work, valued precisely — CA Focus, part of the Siringet platform.
+        </p>
+      </td>
+    </tr>`;
+
+  return {
+    subject: `${firmName} invited you to file together on CA Focus`,
+    html: emailShell({ previewText: `${firmName} invited you to CA Focus`, bodyHtml }),
+    text: `${firmName} invited you to CA Focus for ${serviceTypeDisplayName}.${
+      note ? `\n\nA note from ${firmName}: "${note}"` : ""
+    }\n\nAccept your invite: ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
+  };
+}
+
 function verificationApproved(data: Record<string, unknown>): RenderedEmail {
   const signInUrl = String(data.signInUrl ?? "");
   const firmName = data.firmName ? String(data.firmName) : null;
@@ -421,4 +498,11 @@ export const CA_TEMPLATES: Record<string, TemplateRenderer> = {
 // role bucket comment.
 export const PROSPECT_TEMPLATES: Record<string, TemplateRenderer> = {
   "referral.client_endorsement": referralClientEndorsement,
+};
+
+// Individual/smb_owner-facing templates — deliberately just this one entry,
+// not a parallel full copy of CA_TEMPLATES. See registry.ts's comment on
+// why these two roles otherwise fall through to FALLBACK_TEMPLATES.
+export const CLIENT_TEMPLATES: Record<string, TemplateRenderer> = {
+  "referral.ca_client_invite": referralCaClientInvite,
 };

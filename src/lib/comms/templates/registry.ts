@@ -5,7 +5,7 @@
 // touch the hook route or send-notification.ts.
 
 import type { RenderedEmail, TemplateKey } from "../types";
-import { CA_TEMPLATES, PROSPECT_TEMPLATES } from "./ca";
+import { CA_TEMPLATES, CLIENT_TEMPLATES, PROSPECT_TEMPLATES } from "./ca";
 import { FALLBACK_TEMPLATES } from "./fallback";
 import { INTERNAL_TEMPLATES } from "./support";
 
@@ -13,11 +13,19 @@ import { INTERNAL_TEMPLATES } from "./support";
 const REGISTRY: Record<string, Record<string, Record<string, (data: Record<string, unknown>) => RenderedEmail>>> = {
   cafocus: {
     ca: CA_TEMPLATES,
-    // "individual" / "small-business" roles don't have onboarding flows
-    // yet (../../../../cafocus/README.md's phase plan) — no entry here on
-    // purpose. getTemplate() below falls through to FALLBACK_TEMPLATES for
-    // any role with no dedicated entry, rather than a per-role stub file
-    // duplicating the same generic copy.
+    // "individual" / "smb_owner" don't have a full onboarding-flow template
+    // set (../../../../cafocus/README.md's phase plan) — CLIENT_TEMPLATES is
+    // just the one dedicated entry ("referral.ca_client_invite", a CA
+    // inviting an existing client onto the platform for a specific,
+    // already-agreed engagement). Every other triggerEvent for these two
+    // roles still falls through to FALLBACK_TEMPLATES below, on purpose —
+    // e.g. the generic self-service/admin "referral.marketer_invite" invite
+    // is deliberately NOT branded here, so it stays one shared template
+    // across all the flows that reuse it (see ./ca.ts's
+    // referralCaClientInvite() header comment for why it needed its own
+    // triggerEvent instead of reusing that one).
+    individual: CLIENT_TEMPLATES,
+    smb_owner: CLIENT_TEMPLATES,
 
     // Not a real siringetbase.role_profiles.role value — a comms-only
     // addressing bucket for client-endorsement broadcast recipients, who
