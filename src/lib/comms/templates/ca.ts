@@ -85,9 +85,13 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
         <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
           You've been invited to CA Focus
         </h1>
-        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
-          Someone thinks you'd be a great fit for CA Focus — the practice workspace for pricing
-          your services, taking on clients, and running verified engagements. Get started below.
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">
+          Someone thinks you'd be a great fit for CA Focus — the practice workspace where
+          chartered accountants price their services, take on pre-scoped clients, and run
+          verified engagements, replacing the spreadsheet-and-email-thread routine.
+        </p>
+        <p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#64748b;">
+          Free to list — there's no cost to join or set up your profile.
         </p>
         <table role="presentation" cellpadding="0" cellspacing="0">
           <tr>
@@ -99,6 +103,9 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
             </td>
           </tr>
         </table>
+        <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
+          Takes about a minute — sign in with just your email, no password.
+        </p>
         <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
           Accepting this invite carries the Siringet Referred credential into your profile once
           you're verified. If you weren't expecting this, you can safely ignore this email.
@@ -116,7 +123,7 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
   return {
     subject: "You've been invited to CA Focus",
     html: emailShell({ previewText: "You've been invited to CA Focus", bodyHtml }),
-    text: `You've been invited to CA Focus.\n\nAccept your invite: ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
+    text: `You've been invited to CA Focus — the practice workspace for pricing your services, taking on clients, and running verified engagements. Free to list, no cost to join.\n\nAccept your invite: ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
   };
 }
 
@@ -133,6 +140,21 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
 // fee is disclosed once the client is inside the product, on the
 // engagement itself. Sent from cafocus/app's
 // app/api/ca/invite-client/route.ts.
+//
+// Confidence/ease pass (owner's ask, after the first version shipped): a
+// client who's never heard of CA Focus has no way to tell this apart from a
+// phishing-style invite, and no idea what clicking through actually
+// commits them to. Four additions address that, in order of appearance:
+// (1) "ICAI-verified CA" as a trust anchor — true for every sender of this
+// email, since getActiveCaRoleProfile() (the route's own auth gate) only
+// resolves a role_profiles.status === "active" CA, i.e. already verified;
+// (2) a one-line explanation of what CA Focus even is, since the recipient
+// may only trust their CA, not yet the platform; (3) an explicit
+// nothing-to-pay-or-sign-yet line, since "release your payment" alone can
+// read as "something is about to be charged"; (4) a what-happens-next line
+// before the click, so the sign-in step isn't a surprise. The optional note
+// box now sits *after* the button rather than between the body and the
+// CTA, so it doesn't add visual distance to the one action that matters.
 function referralCaClientInvite(data: Record<string, unknown>): RenderedEmail {
   const inviteLink = String(data.inviteLink ?? "");
   const firmName = data.firmName ? String(data.firmName) : "A CA on Siringet";
@@ -148,23 +170,19 @@ function referralCaClientInvite(data: Record<string, unknown>): RenderedEmail {
         <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
           You're invited to work with ${escapeHtml(firmName)}
         </h1>
-        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
-          <strong style="color:#0f172a;">${escapeHtml(firmName)}</strong> has invited you to handle your
-          <strong style="color:#0f172a;">${escapeHtml(serviceTypeDisplayName)}</strong> on CA Focus. Once you
-          accept, your documents, deadlines, and this engagement all live in one place — no
-          re-explaining your situation over email. Release your payment once work is delivered.
+        <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:#334155;">
+          <strong style="color:#0f172a;">${escapeHtml(firmName)}</strong> is an ICAI-verified CA on
+          Siringet and has invited you to handle your
+          <strong style="color:#0f172a;">${escapeHtml(serviceTypeDisplayName)}</strong> here — the
+          workspace where they run client work instead of email threads and spreadsheets.
         </p>
-        ${
-          note
-            ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border-radius:10px;margin:0 0 24px;">
-                 <tr>
-                   <td style="padding:14px 16px;font-size:14px;color:#334155;">
-                     A note from ${escapeHtml(firmName)}: &ldquo;${escapeHtml(note)}&rdquo;
-                   </td>
-                 </tr>
-               </table>`
-            : ""
-        }
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">
+          Once you accept, your documents, deadlines, and this engagement all live in one place —
+          no re-explaining your situation over email. Release your payment once work is delivered.
+        </p>
+        <p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#64748b;">
+          Nothing to pay or sign right now — this just gets you both on the same page.
+        </p>
         <table role="presentation" cellpadding="0" cellspacing="0">
           <tr>
             <td style="border-radius:10px;background:${BRAND};">
@@ -175,6 +193,20 @@ function referralCaClientInvite(data: Record<string, unknown>): RenderedEmail {
             </td>
           </tr>
         </table>
+        <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
+          Takes about 30 seconds — no password needed, just your email to sign in.
+        </p>
+        ${
+          note
+            ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#f8fafc;border-radius:10px;margin:20px 0 0;">
+                 <tr>
+                   <td style="padding:14px 16px;font-size:14px;color:#334155;">
+                     A note from ${escapeHtml(firmName)}: &ldquo;${escapeHtml(note)}&rdquo;
+                   </td>
+                 </tr>
+               </table>`
+            : ""
+        }
         <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
           If you weren't expecting this, you can safely ignore this email.
         </p>
@@ -191,9 +223,9 @@ function referralCaClientInvite(data: Record<string, unknown>): RenderedEmail {
   return {
     subject: `${firmName} invited you to file together on CA Focus`,
     html: emailShell({ previewText: `${firmName} invited you to CA Focus`, bodyHtml }),
-    text: `${firmName} invited you to CA Focus for ${serviceTypeDisplayName}.${
+    text: `${firmName} is an ICAI-verified CA on Siringet and invited you to CA Focus for ${serviceTypeDisplayName}. Nothing to pay or sign right now.${
       note ? `\n\nA note from ${firmName}: "${note}"` : ""
-    }\n\nAccept your invite: ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
+    }\n\nAccept your invite (takes about 30 seconds, no password needed): ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
   };
 }
 
@@ -269,7 +301,8 @@ function verificationRejected(data: Record<string, unknown>): RenderedEmail {
           </tr>
         </table>
         <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
-          You can update your details and resubmit whenever you're ready.
+          This isn't final — you can update your details and resubmit whenever you're ready, and
+          most resubmissions are reviewed quickly.
         </p>
         ${
           signInUrl
@@ -298,7 +331,7 @@ function verificationRejected(data: Record<string, unknown>): RenderedEmail {
   return {
     subject: "Update on your CA Focus verification",
     html: emailShell({ previewText: "Update on your CA Focus verification", bodyHtml }),
-    text: `Update on your CA Focus verification.\n\nWe weren't able to verify your profile this time.\n\nReason: ${rejectionReason}\n\nYou can update your details and resubmit whenever you're ready.${signInUrl ? `\n\n${signInUrl}` : ""}`,
+    text: `Update on your CA Focus verification.\n\nWe weren't able to verify your profile this time.\n\nReason: ${rejectionReason}\n\nThis isn't final — you can update your details and resubmit whenever you're ready, and most resubmissions are reviewed quickly.${signInUrl ? `\n\n${signInUrl}` : ""}`,
   };
 }
 
@@ -322,10 +355,13 @@ function referralClientEndorsement(data: Record<string, unknown>): RenderedEmail
         <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
           A recommendation for you
         </h1>
-        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
-          Someone you know worked with <strong style="color:#0f172a;">${escapeHtml(caFirmName)}</strong>
-          on CA Focus and wanted you to know about them — for tax filing, GST, audits, and other
-          engagements handled through verified, priced-up-front CA profiles.
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">
+          Someone you know worked with <strong style="color:#0f172a;">${escapeHtml(caFirmName)}</strong>,
+          an ICAI-verified CA, on CA Focus and wanted you to know about them — for tax filing,
+          GST, audits, and other engagements handled through verified, priced-up-front CA profiles.
+        </p>
+        <p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#64748b;">
+          No obligation — this is just an introduction, nothing to sign or pay.
         </p>
         ${
           siteUrl
@@ -357,7 +393,7 @@ function referralClientEndorsement(data: Record<string, unknown>): RenderedEmail
   return {
     subject: `A recommendation for ${caFirmName}`,
     html: emailShell({ previewText: `Someone recommended ${caFirmName} on CA Focus`, bodyHtml }),
-    text: `Someone you know worked with ${caFirmName} on CA Focus and wanted you to know about them.${siteUrl ? `\n\n${siteUrl}` : ""}\n\nIf this isn't relevant to you, no action is needed.`,
+    text: `Someone you know worked with ${caFirmName}, an ICAI-verified CA, on CA Focus and wanted you to know about them. No obligation — just an introduction.${siteUrl ? `\n\n${siteUrl}` : ""}\n\nIf this isn't relevant to you, no action is needed.`,
   };
 }
 
@@ -400,6 +436,10 @@ function subscriptionPaymentDue(data: Record<string, unknown>): RenderedEmail {
                </table>`
             : ""
         }
+        <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
+          Takes you to a secure page on your own CA Focus dashboard — no card details are entered
+          in this email.
+        </p>
         <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
           Prefer not to do this every month? Switch to auto-renew from your subscription settings and
           this gets collected automatically going forward.
@@ -417,7 +457,7 @@ function subscriptionPaymentDue(data: Record<string, unknown>): RenderedEmail {
   return {
     subject: `${serviceDisplayName} payment due — ₹${amount}`,
     html: emailShell({ previewText: `${serviceDisplayName} payment of ₹${amount} is due`, bodyHtml }),
-    text: `${serviceDisplayName} payment due: ₹${amount}.\n\nYou're on manual monthly billing, so this isn't charged automatically.${payUrl ? `\n\nPay now: ${payUrl}` : ""}\n\nPrefer automatic collection? Switch to auto-renew from your subscription settings.`,
+    text: `${serviceDisplayName} payment due: ₹${amount}.\n\nYou're on manual monthly billing, so this isn't charged automatically.${payUrl ? `\n\nPay now (takes you to your own CA Focus dashboard, no card details in this email): ${payUrl}` : ""}\n\nPrefer automatic collection? Switch to auto-renew from your subscription settings.`,
   };
 }
 

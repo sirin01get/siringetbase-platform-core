@@ -75,8 +75,11 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
         <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
           You've been invited
         </h1>
-        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">
           Someone thinks you'd be a great fit. Use the button below to accept your invite.
+        </p>
+        <p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#64748b;">
+          Nothing to pay or sign right now — this just gets you set up.
         </p>
         <table role="presentation" cellpadding="0" cellspacing="0">
           <tr>
@@ -88,6 +91,9 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
             </td>
           </tr>
         </table>
+        <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
+          Takes about a minute — sign in with just your email, no password.
+        </p>
         <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
           If you weren't expecting this, you can safely ignore this email.
         </p>
@@ -97,7 +103,7 @@ function referralMarketerInvite(data: Record<string, unknown>): RenderedEmail {
   return {
     subject: "You've been invited",
     html: emailShell({ previewText: "You've been invited", bodyHtml }),
-    text: `You've been invited.\n\nAccept your invite: ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
+    text: `You've been invited. Nothing to pay or sign right now.\n\nAccept your invite (takes about a minute, no password needed): ${inviteLink}\n\nIf you weren't expecting this, you can safely ignore this email.`,
   };
 }
 
@@ -122,9 +128,12 @@ function marketplaceProposalReceived(data: Record<string, unknown>): RenderedEma
         <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
           You've received a proposal
         </h1>
-        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+        <p style="margin:0 0 16px;font-size:15px;line-height:1.6;color:#334155;">
           <strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> sent a proposal on
           &ldquo;${escapeHtml(requirementTitle)}&rdquo;${feeAmount ? ` for ₹${escapeHtml(feeAmount)}` : ""}.
+        </p>
+        <p style="margin:0 0 24px;font-size:13px;line-height:1.5;color:#64748b;">
+          Nothing happens automatically — review it and accept only if it works for you.
         </p>
         ${
           dashboardUrl
@@ -146,7 +155,7 @@ function marketplaceProposalReceived(data: Record<string, unknown>): RenderedEma
   return {
     subject: `${caDisplayName} sent you a proposal`,
     html: emailShell({ previewText: `${caDisplayName} sent a proposal on ${requirementTitle}`, bodyHtml }),
-    text: `${caDisplayName} sent a proposal on "${requirementTitle}"${feeAmount ? ` for ₹${feeAmount}` : ""}.${dashboardUrl ? `\n\n${dashboardUrl}` : ""}`,
+    text: `${caDisplayName} sent a proposal on "${requirementTitle}"${feeAmount ? ` for ₹${feeAmount}` : ""}. Nothing happens automatically — review it and accept only if it works for you.${dashboardUrl ? `\n\n${dashboardUrl}` : ""}`,
   };
 }
 
@@ -168,8 +177,8 @@ function marketplaceRequestDecision(data: Record<string, unknown>): RenderedEmai
     decision === "accepted"
       ? `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> accepted your request${feeAmount ? ` for ₹${escapeHtml(feeAmount)}` : ""}.`
       : decision === "countered"
-        ? `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> proposed a new fee${feeAmount ? `: ₹${escapeHtml(feeAmount)}` : ""}. Accept, decline, or counter from your dashboard.`
-        : `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> declined your request.${declineReason ? ` Reason: ${escapeHtml(declineReason)}` : ""}`;
+        ? `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> proposed a new fee${feeAmount ? `: ₹${escapeHtml(feeAmount)}` : ""}. Nothing is final yet — accept, decline, or counter again from your dashboard.`
+        : `<strong style="color:#0f172a;">${escapeHtml(caDisplayName)}</strong> declined your request.${declineReason ? ` Reason: ${escapeHtml(declineReason)}` : ""} You're free to request another CA any time.`;
 
   const bodyHtml = `
     <tr>
