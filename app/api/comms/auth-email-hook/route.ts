@@ -39,6 +39,7 @@ const TRIGGER_EVENT_MAP: Record<string, string> = {
 function inferVertical(originHost: string): string {
   if (originHost.includes("cafocus")) return "cafocus";
   if (originHost.includes("buildfocus")) return "buildfocus";
+  if (originHost.includes("lawforge")) return "lawforge";
   return "unknown";
 }
 

@@ -6,6 +6,7 @@
 
 import type { RenderedEmail, TemplateKey } from "../types";
 import { CA_TEMPLATES, CLIENT_TEMPLATES, PROSPECT_TEMPLATES } from "./ca";
+import { LAWFORGE_TEMPLATES } from "./lawforge";
 import { FALLBACK_TEMPLATES } from "./fallback";
 import { INTERNAL_TEMPLATES } from "./support";
 import { getCommsTemplate, renderCommsTemplate } from "./store";
@@ -34,6 +35,12 @@ const REGISTRY: Record<string, Record<string, Record<string, (data: Record<strin
     // comment). Sent from app/api/referrals/endorse/route.ts with
     // role: "prospect".
     prospect: PROSPECT_TEMPLATES,
+  },
+
+  // LawForge — single role ("lawyer") today, see ./lawforge.ts's header
+  // comment for the brand/contrast choices.
+  lawforge: {
+    lawyer: LAWFORGE_TEMPLATES,
   },
 };
 
