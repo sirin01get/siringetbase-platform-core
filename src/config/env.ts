@@ -73,7 +73,20 @@ export const env = {
   // is already Verified in Resend (confirmed 2026-07-18) — override per
   // vertical later if each one wants its own subdomain/address instead of
   // sharing this one.
-  commsFromEmail: () => process.env.COMMS_FROM_EMAIL ?? "CA Focus <onboarding@email.siringet.com>",
+  //
+  // Bug fix (2026-08-09, found during LawForge QA): this was literally
+  // "CA Focus <onboarding@email.siringet.com>" — getEmailSender() in
+  // provider-registry.ts is a single process-wide singleton, so every
+  // vertical's email shared this one From: header regardless of which
+  // vertical's template rendered the body. A LawForge (or any future
+  // vertical's) email would show "CA Focus" as the sender even with fully
+  // correct template resolution. Changed to a neutral platform identity —
+  // consistent with the "sharing this one" address already being shared,
+  // just not neutrally named. Making the display name genuinely
+  // per-vertical (like ca.ts's/lawforge.ts's BRAND constants) would need
+  // ResendAdapter.send() to accept a display-name override per request —
+  // flagged here as a real follow-up, not done as part of this fix.
+  commsFromEmail: () => process.env.COMMS_FROM_EMAIL ?? "Siringet <onboarding@email.siringet.com>",
 
   // Support Escalation — ../../support-escalation/README.md's "Two Entry
   // Points" (POST /api/comms/notify, the cross-Worker caller for a
