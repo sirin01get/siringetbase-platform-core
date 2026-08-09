@@ -70,23 +70,21 @@ export const env = {
   // DMARC) — an unverified From: domain is the single most common reason a
   // transactional email silently never arrives, see ../../comms/README.md's
   // Rollout Plan step 1. Default below points at email.siringet.com, which
-  // is already Verified in Resend (confirmed 2026-07-18) — override per
-  // vertical later if each one wants its own subdomain/address instead of
-  // sharing this one.
+  // is already Verified in Resend (confirmed 2026-07-18) — every vertical
+  // shares this one address; only the display NAME in front of it varies
+  // per vertical now (see src/lib/comms/from-name.ts), not the address
+  // itself.
   //
-  // Bug fix (2026-08-09, found during LawForge QA): this was literally
-  // "CA Focus <onboarding@email.siringet.com>" — getEmailSender() in
-  // provider-registry.ts is a single process-wide singleton, so every
-  // vertical's email shared this one From: header regardless of which
-  // vertical's template rendered the body. A LawForge (or any future
-  // vertical's) email would show "CA Focus" as the sender even with fully
-  // correct template resolution. Changed to a neutral platform identity —
-  // consistent with the "sharing this one" address already being shared,
-  // just not neutrally named. Making the display name genuinely
-  // per-vertical (like ca.ts's/lawforge.ts's BRAND constants) would need
-  // ResendAdapter.send() to accept a display-name override per request —
-  // flagged here as a real follow-up, not done as part of this fix.
-  commsFromEmail: () => process.env.COMMS_FROM_EMAIL ?? "Siringet <onboarding@email.siringet.com>",
+  // Bug fix (2026-08-09, found during LawForge QA): this used to be a
+  // single literal string — "CA Focus <onboarding@email.siringet.com>" —
+  // used as the From: header for every vertical's email, since
+  // getEmailSender() in provider-registry.ts is a process-wide singleton.
+  // A LawForge (or any future vertical's) email showed "CA Focus" as the
+  // sender even with fully correct template resolution. Split into this
+  // (bare address, still one shared value) plus from-name.ts's per-vertical
+  // display name, composed together in ResendAdapter.send() per request —
+  // so the fix is genuinely per-vertical, not just a neutral placeholder.
+  commsFromAddress: () => process.env.COMMS_FROM_ADDRESS ?? "onboarding@email.siringet.com",
 
   // Support Escalation — ../../support-escalation/README.md's "Two Entry
   // Points" (POST /api/comms/notify, the cross-Worker caller for a

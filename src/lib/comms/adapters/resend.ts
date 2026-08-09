@@ -10,12 +10,19 @@
 
 import type { EmailSenderPort, SendEmailRequest, SendEmailResult } from "../types";
 import { getTemplate } from "../templates/registry";
+import { resolveFromName } from "../from-name";
 
 const RESEND_API_URL = "https://api.resend.com/emails";
 
 export interface ResendAdapterConfig {
   apiKey: string;
-  fromAddress: string; // e.g. "CA Focus <onboarding@cafocus.example>" — must be a Resend-verified sending domain
+  // Bare address only, e.g. "onboarding@email.siringet.com" — must be a
+  // Resend-verified sending domain. The display name in front of it is no
+  // longer part of this config; send() composes it per request from
+  // request.vertical via ../from-name.ts, so the same shared address can
+  // show as "CA Focus <...>" or "LawForge <...>" depending on who's
+  // actually sending — see that file's header comment for why.
+  fromAddress: string;
 }
 
 export function createResendAdapter(config: ResendAdapterConfig): EmailSenderPort {
@@ -34,6 +41,7 @@ export function createResendAdapter(config: ResendAdapterConfig): EmailSenderPor
         triggerEvent: request.triggerEvent,
       });
       const rendered = render(request.templateData);
+      const fromName = resolveFromName(request.vertical);
 
       const response = await fetch(RESEND_API_URL, {
         method: "POST",
@@ -42,7 +50,7 @@ export function createResendAdapter(config: ResendAdapterConfig): EmailSenderPor
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          from: config.fromAddress,
+          from: `${fromName} <${config.fromAddress}>`,
           to: [request.to],
           // Resend's native reply-to param — see ../types.ts's
           // SendEmailRequest.replyTo header comment for when this is (and

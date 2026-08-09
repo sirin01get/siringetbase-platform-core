@@ -15,7 +15,7 @@ export function getEmailSender(): EmailSenderPort {
   if (cached) return cached;
   cached = createResendAdapter({
     apiKey: env.resendApiKey(),
-    fromAddress: env.commsFromEmail(),
+    fromAddress: env.commsFromAddress(),
   });
   return cached;
 }

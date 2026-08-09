@@ -72,7 +72,7 @@ export const ENV_VAR_SPECS: EnvVarSpec[] = [
   { name: "BANK_PAYOUT_PROVIDER", scope: "runtime", secret: false, purpose: "Which mock bank-payout adapter is active. Optional — defaults to icici-mock." },
   { name: "RESEND_API_KEY", scope: "runtime", secret: true, purpose: "Resend API key — sends every transactional/comms email." },
   { name: "SEND_EMAIL_HOOK_SECRET", scope: "runtime", secret: true, purpose: "Verifies Supabase Auth's Send Email webhook signature." },
-  { name: "COMMS_FROM_EMAIL", scope: "runtime", secret: false, purpose: "From: address on every comms email. Optional — has a default." },
+  { name: "COMMS_FROM_ADDRESS", scope: "runtime", secret: false, purpose: "From: address on every comms email (display name is per-vertical, see src/lib/comms/from-name.ts). Optional — has a default." },
   { name: "COMMS_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates POST /api/comms/notify.", mustMatchKey: "comms_internal_secret" },
   { name: "SUPPORT_INBOX_EMAIL", scope: "runtime", secret: false, purpose: "Where support.error_report_filed notifications land. Optional — has a default." },
   { name: "DOCUMENT_INTELLIGENCE_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates POST /api/document-intelligence/extract.", mustMatchKey: "document_intelligence_internal_secret" },
@@ -346,7 +346,7 @@ export async function buildEnvCheckReport(appName: string): Promise<EnvCheckRepo
   }
 
   const controlNote: TestOutcomeResult = { result: "not_tested", message: "Just a control — the configured/shape check above is sufficient." };
-  for (const n of ["PAYMENT_GATEWAY_PROVIDER", "BANK_PAYOUT_PROVIDER", "COMMS_FROM_EMAIL", "SUPPORT_INBOX_EMAIL", "GST_GATEWAY_PROVIDER"]) {
+  for (const n of ["PAYMENT_GATEWAY_PROVIDER", "BANK_PAYOUT_PROVIDER", "COMMS_FROM_ADDRESS", "SUPPORT_INBOX_EMAIL", "GST_GATEWAY_PROVIDER"]) {
     testResults.set(n, controlNote);
   }
 
