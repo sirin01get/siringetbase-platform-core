@@ -93,6 +93,57 @@ function authMagicLink(data: Record<string, unknown>): RenderedEmail {
   };
 }
 
+// Sent from lawforge/app's src/lib/clients/store.ts's inviteClient(), via
+// auth.admin.inviteUserByEmail() — GoTrue's "invite" action type
+// (auth-email-hook/route.ts's TRIGGER_EVENT_MAP maps it to "auth.invite").
+// `practiceName` comes through as user_metadata (that route's own
+// spread-user_metadata-into-templateData comment explains why), not a
+// normal template-call argument — falls back to generic copy if it's ever
+// missing rather than printing "undefined". This is the branded LawForge
+// counterpart to ../fallback.ts's authInvite(): that generic version is
+// what a brand-new business_admin invite still falls through to (no
+// practice_name to merge for that role), this one is what a client invite
+// actually renders once registered under role 'client' in ../registry.ts.
+function authInvite(data: Record<string, unknown>): RenderedEmail {
+  const confirmationUrl = String(data.confirmationUrl ?? "");
+  const backupCode = data.token ? String(data.token) : null;
+  const practiceName = data.practice_name ? String(data.practice_name) : null;
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        ${eyebrowBadge()}
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:${INK};">
+          You&rsquo;ve been invited${practiceName ? ` by ${escapeHtml(practiceName)}` : ""}
+        </h1>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:${MUTED};">
+          ${practiceName ? escapeHtml(practiceName) : "Your lawyer"} has set up a LawForge client space for
+          you — a place to send and receive documents for your matter. Use the button below to accept
+          and sign in, no password needed.
+        </p>
+        ${ctaButton(confirmationUrl, "Accept invite")}
+        ${
+          backupCode
+            ? `<p style="margin:24px 0 0;font-size:13px;color:${MUTED};">
+                 Button not working? Use this one-time code instead: <strong style="color:${INK};letter-spacing:0.06em;">${escapeHtml(backupCode)}</strong>
+               </p>`
+            : ""
+        }
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
+          This link expires shortly and can only be used once. If you weren't expecting this, you can
+          safely ignore this email.
+        </p>
+      </td>
+    </tr>
+    ${footer()}`;
+
+  return {
+    subject: practiceName ? `${practiceName} invited you to LawForge` : "You've been invited to LawForge",
+    html: emailShell({ previewText: "You've been invited to a LawForge client space", bodyHtml }),
+    text: `${practiceName ? `${practiceName} has invited you` : "You've been invited"} to a LawForge client space — a place to send and receive documents for your matter.\n\nAccept your invite and sign in: ${confirmationUrl}${backupCode ? `\n\nOr use this one-time code: ${backupCode}` : ""}\n\nThis link expires shortly and can only be used once. If you weren't expecting this, you can safely ignore this email.`,
+  };
+}
+
 // Sent from lawforge/app's app/api/admin/lawyer-verifications/[id]/route.ts
 // on a business_admin's approve decision — same
 // notify-after-the-decision-is-already-recorded, best-effort posture as
@@ -161,8 +212,84 @@ function verificationRejected(data: Record<string, unknown>): RenderedEmail {
   };
 }
 
+// Deadline reminder — sent by lawforge/app's own Cron Trigger sweep
+// (src/lib/matters/deadline-reminders.ts there, run from its worker.ts),
+// not by any user action, so unlike every other template in this file
+// there's no "you just did something" context to anchor it. One email per
+// lawyer per sweep covering all their due matters, rather than one per
+// matter — a lawyer with six deadlines landing the same week should get one
+// digest, not six separate emails.
+//
+// `matters` arrives as an array of plain objects rather than pre-rendered
+// text so the copy stays owned here (comms/README.md's Boundary Rule)
+// rather than in the vertical's sweep code. Defensively narrowed: this
+// renderer is reachable from a DB-override tier too (see
+// ../registry.ts's getTemplate()), so it can't assume the shape it gets.
+function matterDeadlineReminder(data: Record<string, unknown>): RenderedEmail {
+  const signInUrl = String(data.signInUrl ?? "");
+  const rawMatters = Array.isArray(data.matters) ? data.matters : [];
+
+  const matters = rawMatters.map((entry) => {
+    const row = (entry ?? {}) as Record<string, unknown>;
+    return {
+      title: String(row.title ?? "Untitled matter"),
+      clientEmail: row.clientEmail ? String(row.clientEmail) : null,
+      nextDeadline: String(row.nextDeadline ?? ""),
+      nextAction: row.nextAction ? String(row.nextAction) : null,
+    };
+  });
+
+  const count = matters.length;
+  const heading = count === 1 ? "1 matter needs attention" : `${count} matters need attention`;
+
+  const rowsHtml = matters
+    .map(
+      (m) => `<tr>
+        <td style="padding:12px 16px;border-bottom:1px solid #e8e8e8;">
+          <p style="margin:0 0 4px;font-size:15px;font-weight:600;color:${INK};">${escapeHtml(m.title)}</p>
+          <p style="margin:0;font-size:13px;color:${MUTED};">
+            Due ${escapeHtml(m.nextDeadline)}${m.clientEmail ? ` &middot; ${escapeHtml(m.clientEmail)}` : ""}
+          </p>
+          ${m.nextAction ? `<p style="margin:6px 0 0;font-size:13px;color:${INK};">Next: ${escapeHtml(m.nextAction)}</p>` : ""}
+        </td>
+      </tr>`
+    )
+    .join("");
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        ${eyebrowBadge()}
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:${INK};">
+          ${escapeHtml(heading)}
+        </h1>
+        <p style="margin:0 0 20px;font-size:15px;line-height:1.6;color:${MUTED};">
+          These have a deadline coming up or already past. Nothing has been sent to your clients —
+          this reminder is for you only.
+        </p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#fafafa;border-radius:10px;margin:0 0 24px;">
+          ${rowsHtml}
+        </table>
+        ${signInUrl ? ctaButton(signInUrl, "Open LawForge") : ""}
+      </td>
+    </tr>
+    ${footer()}`;
+
+  const textLines = matters
+    .map((m) => `- ${m.title} — due ${m.nextDeadline}${m.nextAction ? ` (next: ${m.nextAction})` : ""}`)
+    .join("\n");
+
+  return {
+    subject: count === 1 ? "1 LawForge matter needs attention" : `${count} LawForge matters need attention`,
+    html: emailShell({ previewText: heading, bodyHtml }),
+    text: `${heading}.\n\nThese have a deadline coming up or already past. Nothing has been sent to your clients — this reminder is for you only.\n\n${textLines}${signInUrl ? `\n\n${signInUrl}` : ""}`,
+  };
+}
+
 export const LAWFORGE_TEMPLATES: Record<string, TemplateRenderer> = {
   "auth.magic_link": authMagicLink,
+  "auth.invite": authInvite,
   "verification.approved": verificationApproved,
   "verification.rejected": verificationRejected,
+  "matter.deadline_reminder": matterDeadlineReminder,
 };

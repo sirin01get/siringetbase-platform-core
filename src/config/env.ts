@@ -143,6 +143,28 @@ export const env = {
   subscriptionsInternalSecret: () =>
     required("SUBSCRIPTIONS_INTERNAL_SECRET", process.env.SUBSCRIPTIONS_INTERNAL_SECRET),
 
+  // LawForge's matter deadline-reminder sweep (2026-08-16) — the SECOND
+  // platform-core-calls-out surface, same shape as cafocusAppBaseUrl()/
+  // subscriptionsInternalSecret() directly above, and for a related but
+  // distinct reason. That one is architectural (a vertical's schema is
+  // private to that vertical, so the work has to happen over there).
+  // This one is a plan limit: LawForge has a perfectly good scheduled()
+  // handler of its own, but the Workers Free plan caps Cron Triggers at 5
+  // ACCOUNT-wide and cafocus/app (2) + this Worker (3) already use all
+  // five, so LawForge's own trigger is rejected at deploy time with error
+  // 10072. Its sweep is exposed as POST /api/internal/deadline-sweep and
+  // driven from this Worker's existing 05:00 cron instead — see
+  // ../lib/reminders/deadline-reminder-trigger.ts and lawforge/app's
+  // wrangler.jsonc comment. On a Workers Paid plan this indirection can be
+  // undone on LawForge's side alone; nothing here would need to change
+  // except dropping the call.
+  lawforgeAppBaseUrl: () => required("LAWFORGE_APP_BASE_URL", process.env.LAWFORGE_APP_BASE_URL),
+  // Separate secret per internal surface, same posture as every other
+  // *_INTERNAL_SECRET here. MUST match lawforge/app's own
+  // DEADLINE_REMINDERS_INTERNAL_SECRET.
+  deadlineRemindersInternalSecret: () =>
+    required("DEADLINE_REMINDERS_INTERNAL_SECRET", process.env.DEADLINE_REMINDERS_INTERNAL_SECRET),
+
   // Env-check precheck dashboard (../lib/admin/env-check.ts,
   // app/api/internal/env-check/route.ts) — the owner's ask after
   // PLATFORM_CORE_BASE_URL twice went missing on cafocus/app's Cloudflare

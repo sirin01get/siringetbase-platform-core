@@ -79,6 +79,8 @@ export const ENV_VAR_SPECS: EnvVarSpec[] = [
   { name: "PAYMENTS_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates POST /api/payments/hold and /release.", mustMatchKey: "payments_internal_secret" },
   { name: "CAFOCUS_APP_BASE_URL", scope: "runtime", secret: true, isUrl: true, purpose: "cafocus/app's deployed URL — the daily subscription-billing cron's callback target." },
   { name: "SUBSCRIPTIONS_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates the reverse-direction subscription-billing-cycle call.", mustMatchKey: "subscriptions_internal_secret" },
+  { name: "LAWFORGE_APP_BASE_URL", scope: "runtime", secret: true, isUrl: true, purpose: "lawforge/app's deployed URL — the daily 05:00 cron's callback target for its matter deadline-reminder sweep. Missing means LawForge lawyers silently stop getting deadline reminders." },
+  { name: "DEADLINE_REMINDERS_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates the reverse-direction call into lawforge/app's deadline-reminder sweep.", mustMatchKey: "deadline_reminders_internal_secret" },
   { name: "ENV_CHECK_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates GET /api/internal/env-check — lets cafocus/app's combined precheck dashboard read this report." },
   { name: "GST_GATEWAY_PROVIDER", scope: "runtime", secret: false, purpose: "Which mock/real GSP adapter is active behind GstGatewayPort. Optional — defaults to generic-gsp-mock." },
   { name: "GST_GSP_INTERNAL_SECRET", scope: "runtime", secret: true, purpose: "Gates POST /api/gst-gsp/connect, /push-return, and /status.", mustMatchKey: "gst_gsp_internal_secret" },
@@ -341,7 +343,7 @@ export async function buildEnvCheckReport(appName: string): Promise<EnvCheckRepo
     result: "not_tested",
     message: "This deployment is the callee for this secret — see the \"Shared secrets\" fingerprint cross-check on cafocus/app's combined dashboard for the real test.",
   };
-  for (const n of ["COMMS_INTERNAL_SECRET", "DOCUMENT_INTELLIGENCE_INTERNAL_SECRET", "PAYMENTS_INTERNAL_SECRET", "SUBSCRIPTIONS_INTERNAL_SECRET", "ENV_CHECK_INTERNAL_SECRET", "GST_GSP_INTERNAL_SECRET"]) {
+  for (const n of ["COMMS_INTERNAL_SECRET", "DOCUMENT_INTELLIGENCE_INTERNAL_SECRET", "PAYMENTS_INTERNAL_SECRET", "SUBSCRIPTIONS_INTERNAL_SECRET", "ENV_CHECK_INTERNAL_SECRET", "GST_GSP_INTERNAL_SECRET", "DEADLINE_REMINDERS_INTERNAL_SECRET"]) {
     testResults.set(n, noSelfTest);
   }
 

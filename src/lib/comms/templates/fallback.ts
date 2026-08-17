@@ -56,6 +56,71 @@ function authMagicLink(data: Record<string, unknown>): RenderedEmail {
   };
 }
 
+// Generic account-invite copy — the ACTUAL fallback for GoTrue's "invite"
+// action type (auth-email-hook/route.ts's TRIGGER_EVENT_MAP maps it to
+// "auth.invite"), found missing entirely (2026-08-09) while testing
+// lawforge/app's /admin/staff "grant access" flow: inviteUserByEmail() on a
+// brand-new email 500'd ("Unexpected status code returned from hook: 500")
+// because getTemplate() had nothing to fall through to for "auth.invite" —
+// not in any vertical's registry entry, not here either. This wasn't a
+// LawForge-only gap: no vertical/role has ever had "auth.invite" registered,
+// so admin.inviteUserByEmail() has been broken for every vertical's
+// staff-invite flow (cafocus/app's app/admin/staff/page.tsx included) since
+// the send-email hook went live — a brand-new-account grant would 500
+// before this fix, while an already-existing-account grant (no invite
+// email, just a role_profiles insert) silently worked, which is why this
+// only surfaced now. Uses the same shape as authMagicLink() above
+// (confirmationUrl + optional backupCode — GoTrue's payload for "invite" is
+// the same email_data shape as "magiclink"/"signup", see the hook route's
+// header comment) with invite-specific copy so a recipient with an existing
+// account elsewhere doesn't wrongly read this as "you're being signed in
+// somewhere unexpected."
+function authInvite(data: Record<string, unknown>): RenderedEmail {
+  const confirmationUrl = String(data.confirmationUrl ?? "");
+  const backupCode = data.token ? String(data.token) : null;
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        <p style="margin:0 0 4px;font-size:13px;font-weight:600;letter-spacing:0.04em;text-transform:uppercase;color:#334155;">
+          Siringet
+        </p>
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:#0f172a;">
+          You've been invited
+        </h1>
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:#334155;">
+          Use the button below to accept your invite and sign in — no password needed.
+        </p>
+        <table role="presentation" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="border-radius:10px;background:#0f172a;">
+              <a href="${escapeHtml(confirmationUrl)}"
+                 style="display:inline-block;padding:13px 28px;font-size:15px;font-weight:600;color:#ffffff;text-decoration:none;">
+                Accept invite
+              </a>
+            </td>
+          </tr>
+        </table>
+        ${
+          backupCode
+            ? `<p style="margin:24px 0 0;font-size:13px;color:#64748b;">
+                 Button not working? Use this one-time code instead: <strong style="color:#0f172a;letter-spacing:0.06em;">${escapeHtml(backupCode)}</strong>
+               </p>`
+            : ""
+        }
+        <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
+          If you weren't expecting this, you can safely ignore this email — no account changes were made.
+        </p>
+      </td>
+    </tr>`;
+
+  return {
+    subject: "You've been invited",
+    html: emailShell({ previewText: "You've been invited", bodyHtml }),
+    text: `You've been invited. Accept your invite and sign in (no password needed): ${confirmationUrl}${backupCode ? `\n\nOr use this one-time code: ${backupCode}` : ""}\n\nIf you weren't expecting this, you can safely ignore this email.`,
+  };
+}
+
 // Generic marketer-invite copy for a referee_intended_role other than "ca"
 // (see ../templates/ca.ts's referralMarketerInvite for the branded CA Focus
 // version, registered under role "ca"). No such invite exists yet — only
@@ -218,6 +283,7 @@ function marketplaceRequestDecision(data: Record<string, unknown>): RenderedEmai
 
 export const FALLBACK_TEMPLATES: Record<string, TemplateRenderer> = {
   "auth.magic_link": authMagicLink,
+  "auth.invite": authInvite,
   "referral.marketer_invite": referralMarketerInvite,
   "marketplace.proposal_received": marketplaceProposalReceived,
   "marketplace.request_decision": marketplaceRequestDecision,

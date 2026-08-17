@@ -3,11 +3,19 @@ import { env } from "@/config/env";
 import { timingSafeEqual } from "@/lib/comms/verify-webhook";
 import { buildEnvCheckReport } from "@/lib/admin/env-check";
 
-// Cross-Worker entry point for cafocus/app's combined env-check dashboard
-// (app/admin/env-check/page.tsx there) to read THIS deployment's report —
-// same "single trusted caller, secret header, not a browser session" shape
-// as document-intelligence/extract and comms/notify (a cafocus/app admin
-// session cookie is a different origin and wouldn't be sent here anyway).
+// Cross-Worker entry point for a vertical's combined env-check dashboard to
+// read THIS deployment's report — cafocus/app's (app/admin/env-check/page.tsx
+// there) and, since 2026-08-16, lawforge/app's. Same "trusted callers,
+// secret header, not a browser session" shape as
+// document-intelligence/extract and comms/notify (a vertical's admin session
+// cookie is a different origin and wouldn't be sent here anyway).
+//
+// Deliberately caller-agnostic: it authenticates the SECRET, not the caller,
+// so onboarding another vertical needs no change here — that vertical just
+// sets the same ENV_CHECK_INTERNAL_SECRET value. That's the documented
+// intent (../../../../env-check/README.md: "platform-core's existing secret
+// works for every calling vertical, no new secret needed on platform-core's
+// side"), not an oversight.
 //
 // env.envCheckInternalSecret() is wrapped in its own try/catch rather than
 // called directly — the exact lesson from PLATFORM_CORE_BASE_URL missing

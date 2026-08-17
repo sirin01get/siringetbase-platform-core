@@ -37,10 +37,21 @@ const REGISTRY: Record<string, Record<string, Record<string, (data: Record<strin
     prospect: PROSPECT_TEMPLATES,
   },
 
-  // LawForge — single role ("lawyer") today, see ./lawforge.ts's header
-  // comment for the brand/contrast choices.
+  // LawForge — see ./lawforge.ts's header comment for the brand/contrast
+  // choices. "business_admin" and "client" reuse the exact same renderer
+  // object as "lawyer" (business_admin: 2026-08-09, alongside
+  // lawforge/app's dedicated /admin/login; client: 2026-08-10, alongside
+  // the client document vault) — LAWFORGE_TEMPLATES' entries are keyed by
+  // triggerEvent only, and each one either doesn't assume a role at all
+  // ("sign in to LawForge") or, for "auth.invite", branches on
+  // templateData rather than on which role key it was looked up under (see
+  // authInvite()'s practiceName param) — so one shared object correctly
+  // serves all three roles today. Split a role out into its own object
+  // only if/when it actually needs different wording than the others.
   lawforge: {
     lawyer: LAWFORGE_TEMPLATES,
+    business_admin: LAWFORGE_TEMPLATES,
+    client: LAWFORGE_TEMPLATES,
   },
 };
 

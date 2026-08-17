@@ -130,12 +130,25 @@ export async function POST(req: NextRequest) {
     redirect_to: email_data.redirect_to,
   }).toString()}`;
 
+  // Anything an inviter passed as inviteUserByEmail()'s `data` (user_metadata)
+  // rides along here too, so a template can personalize an invite email
+  // beyond what GoTrue itself gives this hook (which is only ever
+  // user.email + the token/link — no app-specific context). First real
+  // consumer: lawforge/app's src/lib/clients/store.ts's inviteClient()
+  // sets `practice_name` so templates/lawforge.ts's authInvite() (role
+  // 'client') can greet the invitee with their actual lawyer's firm name
+  // instead of generic copy. Deliberately spread wholesale rather than
+  // allowlisting individual keys — user_metadata is already
+  // inviter-controlled data (set server-side by this app's own service-role
+  // client, never end-user input), so there's nothing here a template
+  // wasn't already trusted to receive.
   const sendRequest: SendEmailRequest = {
     to: user.email,
     vertical,
     role,
     triggerEvent,
     templateData: {
+      ...(user.user_metadata ?? {}),
       confirmationUrl,
       token: email_data.token,
       email: user.email,
