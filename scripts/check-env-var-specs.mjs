@@ -9,15 +9,17 @@
 // running this needs no build step of its own, which matters for a CI
 // step meant to run before the real build.
 //
-// Same script, same logic, duplicated in cafocus/app/scripts/ — no shared
-// import path between these two deployments (see ../env-check/README.md's
-// "pattern, not shared code" framing). Keep both copies in sync by hand if
-// the *logic* here ever changes; this file only reads the vars, it doesn't
-// need repo-specific knowledge, so any future vertical can copy it as-is.
+// Same script, same logic, duplicated in cafocus/app/scripts/ and
+// lawforge/app/scripts/ — no shared import path between these deployments
+// (see ../env-check/README.md's "pattern, not shared code" framing). Keep the
+// copies in sync by hand if the *logic* here ever changes; this file only
+// reads the vars, it doesn't need repo-specific knowledge, so any future
+// vertical can copy it as-is.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
+import { readEnvScopes, allDeclared } from "./lib/env-scopes.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -62,9 +64,57 @@ const varsInSpecs = extractVarsFromEnvCheckTs(envCheckTsSource);
 const missingFromSpecs = [...varsInEnvTs].filter((v) => !varsInSpecs.has(v)).sort();
 const staleInSpecs = [...varsInSpecs].filter((v) => !varsInEnvTs.has(v)).sort();
 
-if (missingFromSpecs.length === 0 && staleInSpecs.length === 0) {
-  console.log(`check-env-var-specs: OK — ${varsInEnvTs.size} vars in sync between env.ts and ENV_VAR_SPECS.`);
+// Third leg, added 2026-08-24: every var must also be DECLARED IN .env.example
+// UNDER A `# scope:` HEADING. scripts/sync-secrets.mjs and
+// scripts/verify-deployed-secrets.mjs both derive the runtime-secret list from
+// those annotations, so a var that env.ts reads but .env.example never
+// declares would be silently skipped by both — never pushed to the Worker, and
+// never reported missing. That is precisely the invisible-gap failure those
+// two scripts exist to close, so it gets a check of its own rather than a
+// comment asking people to remember.
+const scopes = readEnvScopes();
+const { runtimeSecrets, runtimeOptional, buildTime, unscoped, unknownScopes } = scopes;
+const missingFromExample = [...varsInEnvTs].filter((v) => !allDeclared(scopes).has(v)).sort();
+
+if (
+  missingFromSpecs.length === 0 &&
+  staleInSpecs.length === 0 &&
+  missingFromExample.length === 0 &&
+  unscoped.length === 0 &&
+  unknownScopes.length === 0
+) {
+  console.log(
+    `check-env-var-specs: OK — ${varsInEnvTs.size} vars in sync across env.ts, ENV_VAR_SPECS ` +
+      `and .env.example (${runtimeSecrets.length} required runtime, ${runtimeOptional.length} optional, ` +
+      `${buildTime.length} build-time).`
+  );
   process.exit(0);
+}
+
+if (unknownScopes.length > 0) {
+  console.error(
+    `check-env-var-specs: FAIL — .env.example has ${unknownScopes.length} unrecognised "# scope:" heading(s):`
+  );
+  for (const s of unknownScopes) console.error(`  - "${s}"`);
+  console.error("  Valid: build | runtime | runtime, optional | tooling | binding");
+}
+
+if (missingFromExample.length > 0) {
+  console.error(
+    `check-env-var-specs: FAIL — ${missingFromExample.length} var(s) read in src/config/env.ts but not declared under a "# scope:" heading in .env.example:`
+  );
+  for (const v of missingFromExample) console.error(`  - ${v}`);
+  console.error(
+    "  Declare each under one of: build | runtime | runtime, optional | tooling | binding.\n" +
+      "  Without that, npm run secrets:sync will never push it and secrets:verify will never miss it."
+  );
+}
+
+if (unscoped.length > 0) {
+  console.error(
+    `check-env-var-specs: FAIL — ${unscoped.length} var(s) declared in .env.example before any "# scope:" heading:`
+  );
+  for (const v of unscoped) console.error(`  - ${v}`);
 }
 
 if (missingFromSpecs.length > 0) {

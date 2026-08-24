@@ -13,7 +13,9 @@
     "check:env-specs": "node scripts/check-env-var-specs.mjs",
     "template:apply": "node scripts/apply-template.mjs",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
-    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "secrets:sync": "node scripts/sync-secrets.mjs",
+    "secrets:verify": "node scripts/verify-deployed-secrets.mjs",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy && npm run secrets:verify",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "db:link": "supabase link",
     "db:push": "supabase db push"

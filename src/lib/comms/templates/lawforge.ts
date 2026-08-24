@@ -109,6 +109,25 @@ function authInvite(data: Record<string, unknown>): RenderedEmail {
   const backupCode = data.token ? String(data.token) : null;
   const practiceName = data.practice_name ? String(data.practice_name) : null;
 
+  // The vertical's own client sign-in page, so an expired invite isn't a dead
+  // end (2026-08-23). Supabase caps OTP/invite validity at 24 hours and won't
+  // allow longer, so an invite opened two days later WILL be expired — but the
+  // client's account already exists by then, and they can just request a fresh
+  // code. Saying so here is the actual fix for "the invite expired"; extending
+  // the token isn't possible.
+  //
+  // Derived from confirmationUrl's own redirect_to rather than data.siteUrl:
+  // siteUrl is the shared Supabase project's Site URL, which points at a
+  // DIFFERENT vertical (cafocus) and would send LawForge clients to the wrong
+  // app entirely. Falls back to no link rather than a wrong one.
+  let signInUrl: string | null = null;
+  try {
+    const redirectTo = new URL(confirmationUrl).searchParams.get("redirect_to");
+    if (redirectTo) signInUrl = `${new URL(redirectTo).origin}/client/login`;
+  } catch {
+    // Malformed or absent — the copy below simply omits the link.
+  }
+
   const bodyHtml = `
     <tr>
       <td style="padding:32px 32px 24px;">
@@ -130,8 +149,15 @@ function authInvite(data: Record<string, unknown>): RenderedEmail {
             : ""
         }
         <p style="margin:24px 0 0;font-size:13px;color:#94a3b8;">
-          This link expires shortly and can only be used once. If you weren't expecting this, you can
-          safely ignore this email.
+          This link expires within 24 hours and can only be used once — but your space doesn&rsquo;t go
+          anywhere.${
+            signInUrl
+              ? ` If it&rsquo;s already expired, <a href="${escapeHtml(signInUrl)}" style="color:${INK};">sign in with this email address</a> and we&rsquo;ll send you a fresh code.`
+              : " If it&rsquo;s already expired, just sign in with this email address and we&rsquo;ll send you a fresh code."
+          }
+        </p>
+        <p style="margin:12px 0 0;font-size:13px;color:#94a3b8;">
+          If you weren&rsquo;t expecting this, you can safely ignore this email.
         </p>
       </td>
     </tr>
@@ -140,7 +166,7 @@ function authInvite(data: Record<string, unknown>): RenderedEmail {
   return {
     subject: practiceName ? `${practiceName} invited you to LawForge` : "You've been invited to LawForge",
     html: emailShell({ previewText: "You've been invited to a LawForge client space", bodyHtml }),
-    text: `${practiceName ? `${practiceName} has invited you` : "You've been invited"} to a LawForge client space — a place to send and receive documents for your matter.\n\nAccept your invite and sign in: ${confirmationUrl}${backupCode ? `\n\nOr use this one-time code: ${backupCode}` : ""}\n\nThis link expires shortly and can only be used once. If you weren't expecting this, you can safely ignore this email.`,
+    text: `${practiceName ? `${practiceName} has invited you` : "You've been invited"} to a LawForge client space — a place to send and receive documents for your matter.\n\nAccept your invite and sign in: ${confirmationUrl}${backupCode ? `\n\nOr use this one-time code: ${backupCode}` : ""}\n\nThis link expires within 24 hours and can only be used once — but your space doesn't go anywhere. If it's already expired, sign in with this email address${signInUrl ? ` at ${signInUrl}` : ""} and we'll send you a fresh code.\n\nIf you weren't expecting this, you can safely ignore this email.`,
   };
 }
 
@@ -148,30 +174,95 @@ function authInvite(data: Record<string, unknown>): RenderedEmail {
 // on a business_admin's approve decision — same
 // notify-after-the-decision-is-already-recorded, best-effort posture as
 // cafocus/app's src/lib/ca/verification-decision.ts.
+// Rewritten 2026-08-16 — the previous version was two sentences and a
+// button. It confirmed the decision but did nothing with the moment: this
+// is the one email in the whole flow that arrives as good news, after a
+// lawyer submitted credentials and then waited on a manual review with no
+// visibility into it.
+//
+// Tone: congratulatory, not effusive. The audience is a practising lawyer
+// receiving a professional credentialing outcome — "Congratulations" and a
+// warm close land well; exclamation marks and marketing superlatives read
+// as unserious and would undercut the fact that a real person reviewed
+// their bar credentials.
+//
+// Structure follows what someone actually needs on being unblocked: the
+// decision, what's now open to them, and the first three concrete things to
+// do — because "you're verified" without a next step just moves the
+// question from "am I approved?" to "so now what?".
 function verificationApproved(data: Record<string, unknown>): RenderedEmail {
   const signInUrl = String(data.signInUrl ?? "");
   const firmName = data.firmName ? String(data.firmName) : null;
+
+  // Numbered steps rather than prose: this is a checklist someone works
+  // through in their first session, and a paragraph would bury it.
+  const steps = [
+    {
+      title: "Make it yours",
+      body: "Set your firm name, logo, and colours. Your clients see your practice — LawForge stays out of the way.",
+    },
+    {
+      title: "Invite your first client",
+      body: "They get their own branded space, with documents you can both see and matters they can follow.",
+    },
+    {
+      title: "Add your colleagues",
+      body: "Associates get their own sign-in and can take on client work straight away.",
+    },
+  ];
+
+  const stepsHtml = steps
+    .map(
+      (s, i) => `<tr>
+        <td style="padding:0 0 14px;" valign="top">
+          <table role="presentation" cellpadding="0" cellspacing="0">
+            <tr>
+              <td width="28" valign="top">
+                <div style="width:22px;height:22px;border-radius:11px;background:${BRAND};text-align:center;font-size:12px;font-weight:700;line-height:22px;color:${INK};">${i + 1}</div>
+              </td>
+              <td valign="top">
+                <p style="margin:0 0 2px;font-size:15px;font-weight:600;color:${INK};">${escapeHtml(s.title)}</p>
+                <p style="margin:0;font-size:14px;line-height:1.6;color:${MUTED};">${escapeHtml(s.body)}</p>
+              </td>
+            </tr>
+          </table>
+        </td>
+      </tr>`
+    )
+    .join("");
 
   const bodyHtml = `
     <tr>
       <td style="padding:32px 32px 24px;">
         ${eyebrowBadge()}
         <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:${INK};">
-          You're verified${firmName ? `, ${escapeHtml(firmName)}` : ""}
+          You're verified${firmName ? `, ${escapeHtml(firmName)}` : ""} — congratulations
         </h1>
-        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:${MUTED};">
-          Your LawForge practice has been reviewed and verified. Your client-facing branded space
-          is live — set up your firm name, logo, and colors if you haven't already.
+        <p style="margin:0 0 12px;font-size:15px;line-height:1.6;color:${MUTED};">
+          We've reviewed your credentials and your practice is now live on LawForge. Everything is
+          open to you: your branded client space, shared documents, matters and deadlines,
+          consultation requests, and document preparation.
         </p>
-        ${signInUrl ? ctaButton(signInUrl, "Go to LawForge") : ""}
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:${MUTED};">
+          Here's where most practices start:
+        </p>
+        <table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;margin:0 0 24px;">
+          ${stepsHtml}
+        </table>
+        ${signInUrl ? ctaButton(signInUrl, "Open your practice") : ""}
+        <p style="margin:24px 0 0;font-size:14px;line-height:1.6;color:${MUTED};">
+          If anything doesn't look right, reply to this email — a person reads it.
+        </p>
       </td>
     </tr>
     ${footer()}`;
 
+  const textSteps = steps.map((s, i) => `${i + 1}. ${s.title} — ${s.body}`).join("\n");
+
   return {
-    subject: "You're verified on LawForge",
-    html: emailShell({ previewText: "Your LawForge practice is verified", bodyHtml }),
-    text: `You're verified on LawForge.\n\nYour practice has been reviewed and verified — your client-facing branded space is live.${signInUrl ? `\n\nSign in: ${signInUrl}` : ""}`,
+    subject: firmName ? `${firmName} is verified on LawForge` : "You're verified on LawForge",
+    html: emailShell({ previewText: "Your practice is verified — here's how to get started", bodyHtml }),
+    text: `You're verified${firmName ? `, ${firmName}` : ""} — congratulations.\n\nWe've reviewed your credentials and your practice is now live on LawForge. Everything is open to you: your branded client space, shared documents, matters and deadlines, consultation requests, and document preparation.\n\nHere's where most practices start:\n\n${textSteps}${signInUrl ? `\n\nOpen your practice: ${signInUrl}` : ""}\n\nIf anything doesn't look right, reply to this email — a person reads it.`,
   };
 }
 
@@ -286,7 +377,64 @@ function matterDeadlineReminder(data: Record<string, unknown>): RenderedEmail {
   };
 }
 
+// Sent whenever an item's ACTION OWNER changes hands between a lawyer and a
+// client — a document requested, paperwork sent back, a consultation
+// answered, a draft delivered. One template rather than one per event,
+// because from the recipient's side every one of them is the same message:
+// "this is now yours, here's what to do, here's the link."
+//
+// That also keeps the email consistent with the in-app ownership model
+// (lawforge/app's src/lib/workflow/ownership.ts): exactly one owner, an
+// instruction phrased to them, and how long it's been waiting. A per-event
+// template set would drift from that vocabulary within a release or two.
+//
+// Addressed to whoever now owns the action, which may be the lawyer or the
+// client — so the copy never assumes which. `actorName` is who caused it
+// ("Your lawyer", or the firm's name), `nextAction` is the instruction.
+function workflowActionNeeded(data: Record<string, unknown>): RenderedEmail {
+  const headline = String(data.headline ?? "Something needs your attention");
+  const itemTitle = data.itemTitle ? String(data.itemTitle) : null;
+  const nextAction = String(data.nextAction ?? "");
+  const contextLine = data.contextLine ? String(data.contextLine) : null;
+  const actionUrl = String(data.actionUrl ?? "");
+  const ctaLabel = String(data.ctaLabel ?? "Open LawForge");
+
+  const bodyHtml = `
+    <tr>
+      <td style="padding:32px 32px 24px;">
+        ${eyebrowBadge()}
+        <h1 style="margin:0 0 16px;font-size:22px;line-height:1.3;color:${INK};">
+          ${escapeHtml(headline)}
+        </h1>
+        ${
+          itemTitle
+            ? `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%;background:#fafafa;border-radius:10px;margin:0 0 20px;">
+                 <tr>
+                   <td style="padding:14px 16px;">
+                     <p style="margin:0;font-size:15px;font-weight:600;color:${INK};">${escapeHtml(itemTitle)}</p>
+                     ${contextLine ? `<p style="margin:4px 0 0;font-size:13px;color:${MUTED};">${escapeHtml(contextLine)}</p>` : ""}
+                   </td>
+                 </tr>
+               </table>`
+            : ""
+        }
+        <p style="margin:0 0 24px;font-size:15px;line-height:1.6;color:${MUTED};">
+          <strong style="color:${INK};">What's next:</strong> ${escapeHtml(nextAction)}
+        </p>
+        ${actionUrl ? ctaButton(actionUrl, ctaLabel) : ""}
+      </td>
+    </tr>
+    ${footer()}`;
+
+  return {
+    subject: itemTitle ? `${headline}: ${itemTitle}` : headline,
+    html: emailShell({ previewText: nextAction || headline, bodyHtml }),
+    text: `${headline}\n\n${itemTitle ? `${itemTitle}\n` : ""}${contextLine ? `${contextLine}\n` : ""}\nWhat's next: ${nextAction}${actionUrl ? `\n\n${ctaLabel}: ${actionUrl}` : ""}`,
+  };
+}
+
 export const LAWFORGE_TEMPLATES: Record<string, TemplateRenderer> = {
+  "workflow.action_needed": workflowActionNeeded,
   "auth.magic_link": authMagicLink,
   "auth.invite": authInvite,
   "verification.approved": verificationApproved,

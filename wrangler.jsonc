@@ -6,6 +6,33 @@
 	// comment for why: it wraps the generated fetch handler and adds the
 	// scheduled() handler the Cron Trigger below needs.
 	"main": "worker.ts",
+	// Stop `wrangler deploy` deleting plain-text Variables that exist on this
+	// Worker but not in this file (2026-08-24). Wrangler reconciles config by
+	// FULL OVERWRITE, not merge, so any var set in the Cloudflare dashboard is
+	// removed by the next deploy — silently, with the deploy still reporting
+	// success.
+	//
+	// This bit LawForge repeatedly: its shared secrets kept reverting to "not
+	// set" days after being fixed, and each recurrence looked like a new bug.
+	// platform-core is exposed to exactly the same thing — CAFOCUS_APP_BASE_URL
+	// and GST_GSP_INTERNAL_SECRET are currently plain Variables here and would
+	// go on the next deploy.
+	//
+	// It matters more on this Worker than on a vertical: platform-core holds
+	// one half of every shared internal secret. When its copy disappears, the
+	// symptom shows up on the OTHER deployment as a 401 or an unavailable
+	// report, which is a long way from the cause.
+	//
+	// Trade-off: removing a var from the dashboard is now the only way to
+	// remove it. Correct priority here — a stale unused var is harmless, a
+	// live one vanishing is not.
+	//
+	// Secrets (`wrangler secret put`) survive deploys regardless and remain
+	// the right home for anything sensitive. LawForge additionally has
+	// `npm run secrets:sync` / `secrets:verify` (see lawforge/app/scripts/);
+	// worth porting here once this repo's .env.example carries the same
+	// `# scope:` annotations those scripts read.
+	"keep_vars": true,
 	"compatibility_date": "2026-07-17",
 	"compatibility_flags": [
 		"nodejs_compat"
