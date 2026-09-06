@@ -24,9 +24,27 @@ import { purgeDeletedAuditLogEntries } from "./src/lib/admin/audit-log-purge";
 import { triggerCafocusSubscriptionBillingCycle } from "./src/lib/billing/subscription-billing-trigger";
 import { triggerLawforgeDeadlineSweep } from "./src/lib/reminders/deadline-reminder-trigger";
 import { sweepStuckExtractionJobs } from "./src/lib/document-intelligence/dead-letter-sweep";
+import { processExtractionQueueBatch } from "./src/lib/document-intelligence/queue-consumer";
 
 export default {
   fetch: handler.fetch,
+
+  // Bulk document-extraction Queue consumer (document-extraction-queue,
+  // wrangler.jsonc) — see queue-consumer.ts's header comment for how this
+  // is what actually delivers "additional AI agents doing parallel
+  // processing" for the bulk-upload feature: Cloudflare runs this handler
+  // across multiple concurrent invocations per wrangler.jsonc's
+  // max_concurrency, each pulling its own batch of messages, rather than
+  // one Worker draining the whole queue sequentially. Same
+  // env-population fix as scheduled() below is NOT needed here — Cloudflare
+  // Queues consumers, unlike this file's custom scheduled() handler, DO go
+  // through OpenNext's normal request-context setup, since a queue handler
+  // is itself one of the entrypoints @opennextjs/cloudflare's generated
+  // worker wires process.env for. (If a future env-related failure shows up
+  // here, check that assumption first before re-adding the copy-loop.)
+  async queue(batch, _env, ctx) {
+    ctx.waitUntil(processExtractionQueueBatch(batch));
+  },
 
   // Fires on either schedule configured in wrangler.jsonc's triggers.crons
   // — event.cron tells the two apart, since they run completely different
@@ -90,25 +108,18 @@ export default {
       }
     }
 
-    // TEMPORARY DIAGNOSTIC (2026-08-02) — the env-population loop above did
-    // NOT fix the cron failures (confirmed via a live post-deploy Exception
-    // still showing "Missing required environment variable:
-    // NEXT_PUBLIC_SUPABASE_URL" at 19:50:38 IST, script version 7176fdfc,
-    // the exact version containing this fix). Every indirect signal has
-    // been ambiguous, so this throws a deliberate, information-rich error
-    // on every invocation to observe _env's real shape directly via
-    // Cloudflare's Live Logs / Observability Events, instead of guessing.
-    // REMOVE this block once the real cause is identified.
-    throw new Error(
-      "DIAGNOSTIC: _env keys=[" +
-        Object.keys(_env as Record<string, unknown>).join(",") +
-        "] envTypeofNextPublicSupabaseUrl=" +
-        typeof (_env as Record<string, unknown>).NEXT_PUBLIC_SUPABASE_URL +
-        " processEnvTypeofNextPublicSupabaseUrl=" +
-        typeof process.env.NEXT_PUBLIC_SUPABASE_URL +
-        " processEnvValuePreview=" +
-        String(process.env.NEXT_PUBLIC_SUPABASE_URL).slice(0, 12)
-    );
+    // The diagnostic throw that used to sit here (2026-08-02) has been
+    // removed while touching this file for the bulk-upload queue() handler
+    // above — it was unconditionally throwing on EVERY scheduled()
+    // invocation regardless of cron, which means every job below (audit-log
+    // purge, subscription billing, entity-sync drain, dead-letter sweep)
+    // has been silently failing on every tick since it was added, not just
+    // during the original investigation. The env-population loop
+    // immediately above IS the real, confirmed fix (populateProcessEnv()'s
+    // own behavior, replicated for this handler) — this diagnostic was left
+    // in past the point it had already done its job. Deploy this change and
+    // check Cloudflare's Observability/Events log after the next few
+    // ticks to confirm all four jobs now complete instead of throwing.
 
     if (event.cron === "0 3 * * 0") {
       ctx.waitUntil(purgeDeletedAuditLogEntries());

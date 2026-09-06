@@ -312,6 +312,10 @@ export interface Database {
           storage_pointer: string;
           original_filename: string | null;
           status: "uploaded" | "extraction_queued" | "extraction_completed" | "extraction_failed";
+          // 0037_document_batches.sql — set when this document was uploaded
+          // as part of a bulk-upload action; null for an ordinary
+          // one-at-a-time upload.
+          batch_id: string | null;
           created_at: string;
         };
         Insert: {
@@ -322,9 +326,33 @@ export interface Database {
           storage_pointer: string;
           original_filename?: string | null;
           status?: "uploaded" | "extraction_queued" | "extraction_completed" | "extraction_failed";
+          batch_id?: string | null;
           created_at?: string;
         };
         Update: Partial<Database["siringetbase"]["Tables"]["documents"]["Insert"]>;
+      };
+      // 0037_document_batches.sql — see that migration's header comment for
+      // why this is deliberately just a header row (owner/vertical/type/
+      // count), with progress always computed live from siringetbase.documents
+      // rather than stored redundantly here.
+      document_batches: {
+        Row: {
+          id: string;
+          owner_role_profile_id: string;
+          vertical: string;
+          document_type: string;
+          file_count: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          owner_role_profile_id: string;
+          vertical: string;
+          document_type: string;
+          file_count: number;
+          created_at?: string;
+        };
+        Update: Partial<Database["siringetbase"]["Tables"]["document_batches"]["Insert"]>;
       };
       extraction_jobs: {
         Row: {

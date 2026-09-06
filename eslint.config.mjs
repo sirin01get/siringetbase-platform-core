@@ -37,6 +37,7 @@ const eslintConfig = [
       "worker.ts",
       "src/lib/document-intelligence/model-gateway.ts",
       "src/lib/document-intelligence/benchmark.ts",
+      "src/lib/document-intelligence/queue.ts",
       "src/lib/security/rate-limit.ts",
       "src/lib/comms/defer.ts",
     ],

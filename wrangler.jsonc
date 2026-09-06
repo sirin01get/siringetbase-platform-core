@@ -107,7 +107,70 @@
 	"vars": {
 		"PAYMENT_GATEWAY_PROVIDER": "razorpay-mock",
 		"BANK_PAYOUT_PROVIDER": "icici-mock"
-	}
+	},
+	// Bulk document-extraction queue (owner's ask: "bulk upload of all types
+	// of invoices ... additional ai agents at cloudflare to do parallel
+	// processing"). See src/lib/document-intelligence/queue-consumer.ts's
+	// header comment for why consumer concurrency IS the "parallel AI
+	// agents" mechanism on this platform, and app/api/internal/
+	// document-intelligence/enqueue-batch/route.ts for the producer side.
+	//
+	// SETUP REQUIRED before this binding resolves on a real deployment —
+	// same "create the account resource once" posture as the CA_DOCUMENTS R2
+	// bucket comment in cafocus/app's wrangler.jsonc:
+	//   wrangler queues create document-extraction-queue
+	//   wrangler queues create document-extraction-dlq
+	// Until both exist, getExtractionQueue() (./src/lib/document-intelligence/
+	// queue.ts) returns null and enqueue-batch/route.ts falls back to
+	// processing the batch inline instead of via the queue — slower (no
+	// real concurrency across Cloudflare invocations), but still correct,
+	// same fail-open posture as every other optional binding in this
+	// codebase (Neo4j, comms' DB-template lookup, rate limiting).
+	"queues": {
+		"producers": [
+			{
+				"queue": "document-extraction-queue",
+				"binding": "EXTRACTION_QUEUE"
+			}
+		],
+		"consumers": [
+			{
+				"queue": "document-extraction-queue",
+				// How many documents one consumer invocation pulls at once, and
+				// how many invocations Cloudflare runs concurrently — together
+				// these two numbers ARE this feature's real parallel-processing
+				// ceiling. Deliberately conservative starting point, same
+				// reasoning as extract.ts's OCR_PAGE_CONCURRENCY and
+				// queue-consumer.ts's BATCH_MESSAGE_CONCURRENCY: no live
+				// bulk-upload traffic data yet on where Workers AI's/OpenAI's/
+				// Gemini's own account-level rate ceilings actually sit. Safe to
+				// raise once real throughput is observed (see
+				// ../document-intelligence/PERFORMANCE_STRATEGY.md's benchmark
+				// tooling for the intended way to get that data).
+				"max_batch_size": 10,
+				"max_batch_timeout": 5,
+				"max_concurrency": 5,
+				"max_retries": 3,
+				"dead_letter_queue": "document-extraction-dlq"
+			}
+		]
+	},
+	// Read access to cafocus/app's OWN R2 bucket — an R2 bucket is an
+	// account-level resource, bindable from more than one Worker's
+	// wrangler.jsonc, not exclusive to the Worker that first created it
+	// (cafocus/app's `wrangler r2 bucket create cafocus-documents`, see that
+	// repo's wrangler.jsonc). See src/lib/document-intelligence/queue.ts's
+	// header comment for why this Worker needs it (bulk extraction reads
+	// the file bytes directly out of R2 instead of a second HTTP transfer)
+	// and extract-from-r2.ts for the only code path that ever calls
+	// `.get()` on it — used read-only in application code even though
+	// nothing at this binding-config level enforces that.
+	"r2_buckets": [
+		{
+			"binding": "CAFOCUS_DOCUMENTS",
+			"bucket_name": "cafocus-documents"
+		}
+	]
 	// Vectorize (Knowledge RAG) and Neo4j are not Workers bindings — Vectorize
 	// gets added when knowledge-rag is actually built; Neo4j is reached over
 	// its Query API (plain HTTPS via fetch(), see src/lib/neo4j/client.ts —
